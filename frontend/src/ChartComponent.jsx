@@ -1,21 +1,43 @@
 import React, { useEffect, useRef } from 'react';
 import { createChart, CandlestickSeries, LineSeries, createSeriesMarkers } from 'lightweight-charts';
 
-// Thick wicks series primitive to draw bolder wicks (tails) for Renko bricks
-class ThickWicksPrimitive {
+// Combined Renko overlay primitive for drawing 15-point custom grid lines and bold wicks
+class RenkoOverlayPrimitive {
   constructor(data, options = {}) {
     this._data = data;
     this._options = options;
     this._chart = null;
     this._series = null;
     this._requestUpdate = null;
+    
+    this._minPrice = Infinity;
+    this._maxPrice = -Infinity;
+    this._calculatePriceRange();
   }
 
   updateData(data) {
     this._data = data;
+    this._calculatePriceRange();
     if (this._requestUpdate) {
       this._requestUpdate();
     }
+  }
+
+  _calculatePriceRange() {
+    if (!this._data || this._data.length === 0) {
+      this._minPrice = Infinity;
+      this._maxPrice = -Infinity;
+      return;
+    }
+
+    let min = Infinity;
+    let max = -Infinity;
+    this._data.forEach((item) => {
+      if (item.low < min) min = item.low;
+      if (item.high > max) max = item.high;
+    });
+    this._minPrice = min;
+    this._maxPrice = max;
   }
 
   attached(param) {
@@ -31,13 +53,83 @@ class ThickWicksPrimitive {
   }
 
   paneViews() {
-    return [new ThickWicksPaneView(this)];
+    return [
+      new RenkoGridLinesPaneView(this), // Grid lines drawn behind
+      new ThickWicksPaneView(this),     // Wicks drawn on top
+    ];
+  }
+}
+
+class RenkoGridLinesPaneView {
+  constructor(primitive) {
+    this._primitive = primitive;
+  }
+
+  zOrder() {
+    return 'bottom'; // Renders behind the candlestick bodies
+  }
+
+  renderer() {
+    return new RenkoGridLinesRenderer(this._primitive);
+  }
+}
+
+class RenkoGridLinesRenderer {
+  constructor(primitive) {
+    this._primitive = primitive;
+  }
+
+  draw(target) {
+    const chart = this._primitive._chart;
+    const series = this._primitive._series;
+    const data = this._primitive._data;
+    const options = this._primitive._options;
+    const brickSize = options.brickSize || 15.0;
+
+    const minPrice = this._primitive._minPrice;
+    const maxPrice = this._primitive._maxPrice;
+
+    if (!chart || !series || !data || data.length === 0 || minPrice === Infinity || maxPrice === -Infinity) return;
+
+    target.useBitmapCoordinateSpace((scope) => {
+      const ctx = scope.context;
+      const horizontalPixelRatio = scope.horizontalPixelRatio;
+      const verticalPixelRatio = scope.verticalPixelRatio;
+
+      // Pad range slightly beyond the data min/max
+      const startPrice = Math.floor((minPrice - 150) / brickSize) * brickSize;
+      const endPrice = Math.ceil((maxPrice + 150) / brickSize) * brickSize;
+
+      // Style grid lines to match theme
+      ctx.lineWidth = (options.gridLineWidth || 1) * verticalPixelRatio;
+      ctx.strokeStyle = options.gridColor || 'rgba(0, 0, 0, 0.08)';
+      ctx.setLineDash([]); // Draw solid lines
+
+      const width = scope.bitmapWidth;
+
+      for (let price = startPrice; price <= endPrice; price += brickSize) {
+        const roundedPrice = Math.round(price * 100) / 100;
+        const yCoordinate = series.priceToCoordinate(roundedPrice);
+        if (yCoordinate === null) continue;
+
+        const y = yCoordinate * verticalPixelRatio;
+
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }
+    });
   }
 }
 
 class ThickWicksPaneView {
   constructor(primitive) {
     this._primitive = primitive;
+  }
+
+  zOrder() {
+    return 'top'; // Renders on top
   }
 
   renderer() {
@@ -109,6 +201,7 @@ class ThickWicksRenderer {
   }
 }
 
+
 export default function ChartComponent({ data, annotations, onBrickClick }) {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
@@ -129,7 +222,7 @@ export default function ChartComponent({ data, annotations, onBrickClick }) {
       },
       grid: {
         vertLines: { color: 'rgba(0, 0, 0, 0.08)' },
-        horzLines: { color: 'rgba(0, 0, 0, 0.08)' },
+        horzLines: { visible: false }, // Disable native horizontal lines (using custom 15pt grid)
       },
       crosshair: {
         mode: 1, // Normal crosshair
@@ -206,12 +299,14 @@ export default function ChartComponent({ data, annotations, onBrickClick }) {
     }));
     candlestickSeries.setData(candleData);
 
-    // Attach custom bold wicks primitive
-    const thickWicksPrimitive = new ThickWicksPrimitive(formattedData, {
+    // Attach custom bold wicks and 15pt grid overlay primitive
+    const renkoOverlay = new RenkoOverlayPrimitive(formattedData, {
       wickWidth: 3, // 3 pixels wide
       wickColor: '#000000',
+      brickSize: 15.0, // Align custom grid lines with 15pt Renko
+      gridColor: 'rgba(0, 0, 0, 0.08)',
     });
-    candlestickSeries.attachPrimitive(thickWicksPrimitive);
+    candlestickSeries.attachPrimitive(renkoOverlay);
 
     // Populate EMA Series
     const emaData = formattedData
