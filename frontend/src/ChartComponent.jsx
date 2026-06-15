@@ -310,9 +310,13 @@ export default function ChartComponent({ data, annotations, onBrickClick }) {
           labelBackgroundColor: '#1e293b',
         },
       },
-      priceScale: {
+      rightPriceScale: {
         borderColor: 'rgba(0, 0, 0, 0.15)',
         autoScale: true,
+        scaleMargins: {
+          top: 0.15,
+          bottom: 0.15,
+        },
       },
       timeScale: {
         borderColor: 'rgba(0, 0, 0, 0.15)',
@@ -333,7 +337,8 @@ export default function ChartComponent({ data, annotations, onBrickClick }) {
             case 4: // TimeWithSeconds
               const hours = String(date.getUTCHours()).padStart(2, '0');
               const minutes = String(date.getUTCMinutes()).padStart(2, '0');
-              return `${hours}:${minutes}`;
+              const seconds = String(date.getUTCSeconds()).padStart(2, '0');
+              return `${hours}:${minutes}:${seconds}`;
             default:
               return '';
           }
