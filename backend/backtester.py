@@ -113,6 +113,20 @@ DEFAULT_CONFIG = {
     "mes_reg5_ema_bounce_arity_min_close_dist_buy": 0.40,
     "mes_reg5_ema_bounce_arity_min_close_dist_sell": 0.72,
     "mes_reg5_ema_bounce_arity_cooldown_bars": 2,
+    "mes_reg5_pin_bar_breakout_slope_period": 8,
+    "mes_reg5_pin_bar_breakout_slope_threshold": 0.20,
+    "mes_reg5_pin_bar_breakout_short_slope_period": 4,
+    "mes_reg5_pin_bar_breakout_short_slope_threshold": 0.20,
+    "mes_reg5_pin_bar_breakout_min_tail": 0.75,
+    "mes_reg5_pin_bar_breakout_max_body": 0.50,
+    "mes_reg5_pin_bar_breakout_min_tail_ratio": 0.60,
+    "mes_reg5_pin_bar_breakout_max_opposite_tail": 0.25,
+    "mes_reg5_pin_bar_breakout_lookback": 8,
+    "mes_reg5_pin_bar_breakout_max_overlap": 0.70,
+    "mes_reg5_pin_bar_breakout_max_reversals": 5,
+    "mes_reg5_pin_bar_breakout_left_lookback": 12,
+    "mes_reg5_pin_bar_breakout_max_left_blockers": 3,
+    "mes_reg5_pin_bar_breakout_cooldown_bars": 2,
 }
 
 def load_json_data(file_path):
@@ -961,6 +975,132 @@ def run_mes_reg5_ema_bounce_arity_strategy(data, config):
                 "leftBodyWall": left_body_wall,
                 "rejectionTail": rejection_tail,
                 "protectedStrongTail": is_protected_strong_tail,
+            },
+        })
+        last_signal_index = i
+
+    return signal_details, evaluate_signal_details(data, signal_details, config)
+
+
+def run_mes_reg5_pin_bar_breakout_strategy(data, config):
+    signal_details = []
+    range_size = infer_range_size(data)
+    scale = range_size / 1.25
+
+    slope_period = max(1, config.get("mes_reg5_pin_bar_breakout_slope_period", 8))
+    short_slope_period = max(1, config.get("mes_reg5_pin_bar_breakout_short_slope_period", 4))
+    slope_threshold = config.get("mes_reg5_pin_bar_breakout_slope_threshold", 0.20) * scale
+    short_slope_threshold = config.get("mes_reg5_pin_bar_breakout_short_slope_threshold", 0.20) * scale
+    min_tail = config.get("mes_reg5_pin_bar_breakout_min_tail", 0.75) * scale
+    max_body = config.get("mes_reg5_pin_bar_breakout_max_body", 0.50) * scale
+    min_tail_ratio = config.get("mes_reg5_pin_bar_breakout_min_tail_ratio", 0.60)
+    max_opposite_tail = config.get("mes_reg5_pin_bar_breakout_max_opposite_tail", 0.25) * scale
+    arity_lookback = max(2, config.get("mes_reg5_pin_bar_breakout_lookback", 8))
+    max_overlap = config.get("mes_reg5_pin_bar_breakout_max_overlap", 0.70)
+    max_reversals = config.get("mes_reg5_pin_bar_breakout_max_reversals", 5)
+    left_lookback = max(1, config.get("mes_reg5_pin_bar_breakout_left_lookback", 12))
+    max_left_blockers = config.get("mes_reg5_pin_bar_breakout_max_left_blockers", 3)
+    cooldown_bars = max(0, config.get("mes_reg5_pin_bar_breakout_cooldown_bars", 2))
+    tick_size = infer_price_increment(data)
+    last_signal_index = -999999
+    start_index = max(slope_period, short_slope_period, arity_lookback)
+
+    def left_blockers(index, action):
+        previous = data[max(0, index - left_lookback):index]
+        current = data[index]
+        if action == "Buy":
+            breakout_price = max(current["open"], current["close"], current["high"])
+            return sum(1 for bar in previous if bar["high"] >= breakout_price - tick_size)
+        breakout_price = min(current["open"], current["close"], current["low"])
+        return sum(1 for bar in previous if bar["low"] <= breakout_price + tick_size)
+
+    for i in range(start_index, len(data)):
+        if i - last_signal_index <= cooldown_bars:
+            continue
+
+        current = data[i]
+        previous = data[i - 1]
+        ema = current.get("ema")
+        prev_ema = data[i - slope_period].get("ema")
+        prev_short_ema = data[i - short_slope_period].get("ema")
+        if None in (ema, prev_ema, prev_short_ema):
+            continue
+
+        o, h, l, c = current["open"], current["high"], current["low"], current["close"]
+        body = abs(c - o)
+        full_range = h - l
+        if full_range <= 0 or body > max_body:
+            continue
+
+        upper_tail = h - max(o, c)
+        lower_tail = min(o, c) - l
+        ema_slope = (ema - prev_ema) / slope_period
+        short_ema_slope = (ema - prev_short_ema) / short_slope_period
+        avg_overlap, reversals = calculate_arity_metrics(data, i, arity_lookback)
+
+        action = None
+        rejection_tail = 0.0
+        opposite_tail = 0.0
+        breakout_distance = 0.0
+        close_breakout_distance = 0.0
+
+        if c > o:
+            rejection_tail = lower_tail
+            opposite_tail = upper_tail
+            breakout_distance = h - previous["high"]
+            close_breakout_distance = c - previous["high"]
+            if (
+                close_breakout_distance > 0 and
+                rejection_tail >= min_tail and
+                rejection_tail / full_range >= min_tail_ratio and
+                opposite_tail <= max_opposite_tail and
+                ema_slope >= slope_threshold and
+                short_ema_slope >= short_slope_threshold
+            ):
+                action = "Buy"
+        elif c < o:
+            rejection_tail = upper_tail
+            opposite_tail = lower_tail
+            breakout_distance = previous["low"] - l
+            close_breakout_distance = previous["low"] - c
+            if (
+                close_breakout_distance > 0 and
+                rejection_tail >= min_tail and
+                rejection_tail / full_range >= min_tail_ratio and
+                opposite_tail <= max_opposite_tail and
+                ema_slope <= -slope_threshold and
+                short_ema_slope <= -short_slope_threshold
+            ):
+                action = "Sell"
+
+        if not action:
+            continue
+
+        blockers = left_blockers(i, action)
+        if avg_overlap > max_overlap or reversals > max_reversals or blockers > max_left_blockers:
+            continue
+
+        signal_details.append({
+            "barIndex": i,
+            "timestamp": current["time"],
+            "action": action,
+            "metrics": {
+                "setupType": "mesReg5PinBarBreakout",
+                "ema": ema,
+                "emaSlope": ema_slope,
+                "shortEmaSlope": short_ema_slope,
+                "body": body,
+                "range": full_range,
+                "rejectionTail": rejection_tail,
+                "oppositeTail": opposite_tail,
+                "tailRatio": rejection_tail / full_range,
+                "breakoutDistance": breakout_distance,
+                "closeBreakoutDistance": close_breakout_distance,
+                "averageOverlap": avg_overlap,
+                "reversals": reversals,
+                "leftBlockers": blockers,
+                "stopPrice": o - tick_size if action == "Buy" else o + tick_size,
+                "exitPlan": "Hold until opposite-color bar; stop one tick past pin bar open",
             },
         })
         last_signal_index = i
@@ -3938,6 +4078,7 @@ if __name__ == "__main__":
         mes_mes3_trend_tail_details = []  # wait, not needed, keep it clean
         mes_reg5_long_tail_details, mes_reg5_long_tail_evaluations = run_mes_reg5_long_tail_strategy(data, config)
         mes_reg5_ema_bounce_arity_details, mes_reg5_ema_bounce_arity_evaluations = run_mes_reg5_ema_bounce_arity_strategy(data, config)
+        mes_reg5_pin_bar_breakout_details, mes_reg5_pin_bar_breakout_evaluations = run_mes_reg5_pin_bar_breakout_strategy(data, config)
         if args.experiment_mes_reg5_quarantine:
             experiment_results = run_mes_reg5_quarantine_experiments(
                 data,
@@ -3978,6 +4119,8 @@ if __name__ == "__main__":
                 "mes_reg5_long_tail_evaluations": mes_reg5_long_tail_evaluations,
                 "mes_reg5_ema_bounce_arity_details": mes_reg5_ema_bounce_arity_details,
                 "mes_reg5_ema_bounce_arity_evaluations": mes_reg5_ema_bounce_arity_evaluations,
+                "mes_reg5_pin_bar_breakout_details": mes_reg5_pin_bar_breakout_details,
+                "mes_reg5_pin_bar_breakout_evaluations": mes_reg5_pin_bar_breakout_evaluations,
                 "campaign_results": campaign_results,
                 "ema_bounce_campaign_results": ema_bounce_campaign_results,
                 "yellow_momentum_campaign_results": yellow_momentum_campaign_results,

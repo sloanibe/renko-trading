@@ -1,128 +1,4 @@
 {
-  "mock_MNQ": [
-    {
-      "timestamp": "2026-06-09T08:35:00Z",
-      "action": "Buy",
-      "comment": "Nice rejection of EMA at 19038.0",
-      "metrics": {
-        "open": 19045,
-        "high": 19060,
-        "low": 19030,
-        "close": 19060,
-        "ema": 19038
-      }
-    }
-  ],
-  "MNQ_Realistic_Market": [
-    {
-      "timestamp": "2026-06-09T13:52:32Z",
-      "action": "Sell",
-      "comment": "you missed this sell signal",
-      "metrics": {
-        "open": 18120,
-        "high": 18148.65,
-        "low": 18105,
-        "close": 18105,
-        "ema": 18148.1753
-      }
-    },
-    {
-      "timestamp": "2026-06-09T13:54:56Z",
-      "action": "Sell",
-      "comment": "",
-      "metrics": {
-        "open": 18075,
-        "high": 18100.97,
-        "low": 18060,
-        "close": 18060,
-        "ema": 18108.1126
-      }
-    },
-    {
-      "timestamp": "2026-06-09T14:18:00Z",
-      "action": "Sell",
-      "comment": "",
-      "metrics": {
-        "open": 17880,
-        "high": 17898.94,
-        "low": 17865,
-        "close": 17865,
-        "ema": 17909.5676
-      }
-    },
-    {
-      "timestamp": "2026-06-09T14:24:22Z",
-      "action": "Sell",
-      "comment": "",
-      "metrics": {
-        "open": 17835,
-        "high": 17864.97,
-        "low": 17820,
-        "close": 17820,
-        "ema": 17860.8321
-      }
-    },
-    {
-      "timestamp": "2026-06-09T14:32:53Z",
-      "action": "Sell",
-      "comment": "",
-      "metrics": {
-        "open": 17715,
-        "high": 17730.11,
-        "low": 17700,
-        "close": 17700,
-        "ema": 17750.9374
-      }
-    },
-    {
-      "timestamp": "2026-06-09T14:34:16Z",
-      "action": "Sell",
-      "comment": "",
-      "metrics": {
-        "open": 17700,
-        "high": 17721.74,
-        "low": 17685,
-        "close": 17685,
-        "ema": 17736.2847
-      }
-    },
-    {
-      "timestamp": "2026-06-09T14:37:18Z",
-      "action": "Sell",
-      "comment": "",
-      "metrics": {
-        "open": 17670,
-        "high": 17693.81,
-        "low": 17655,
-        "close": 17655,
-        "ema": 17706.7648
-      }
-    },
-    {
-      "timestamp": "2026-06-09T14:39:05Z",
-      "action": "Sell",
-      "comment": "",
-      "metrics": {
-        "open": 17655,
-        "high": 17676.06,
-        "low": 17640,
-        "close": 17640,
-        "ema": 17691.9282
-      }
-    },
-    {
-      "timestamp": "2026-06-09T14:44:39Z",
-      "action": "Sell",
-      "comment": "",
-      "metrics": {
-        "open": 17595,
-        "high": 17619.17,
-        "low": 17580,
-        "close": 17580,
-        "ema": 17632.2907
-      }
-    }
-  ],
   "MNQ_15pt": [
     {
       "timestamp": "2026-06-12T06:31:28",
@@ -744,7 +620,7 @@
       }
     }
   ],
-  "MES3": [
+  "MES3data": [
     {
       "timestamp": "2026-06-15T12:59:58",
       "barIndex": 88060,
@@ -930,6 +806,19 @@
   ],
   "MESM_reg_5": [
     {
+      "timestamp": "2026-05-07T06:32:47",
+      "barIndex": 650,
+      "markerSet": "Tail Arrows",
+      "tailArrow": "down",
+      "metrics": {
+        "open": 7394.5,
+        "high": 7395.5,
+        "low": 7394.25,
+        "close": 7394.25,
+        "ema": 7395.8642
+      }
+    },
+    {
       "timestamp": "2026-05-07T06:34:49",
       "barIndex": 653,
       "action": "Sell",
@@ -986,6 +875,19 @@
       }
     },
     {
+      "timestamp": "2026-05-07T07:04:38",
+      "barIndex": 766,
+      "markerSet": "Tail Arrows",
+      "tailArrow": "up",
+      "metrics": {
+        "open": 7392.75,
+        "high": 7392.75,
+        "low": 7391.5,
+        "close": 7392.75,
+        "ema": 7391.1501
+      }
+    },
+    {
       "timestamp": "2026-05-27T07:02:26",
       "barIndex": 42970,
       "action": "Buy",
@@ -1039,6 +941,202 @@
         "low": 7543.75,
         "close": 7545,
         "ema": 7543.475
+      }
+    },
+    {
+      "timestamp": "2026-06-12T06:40:43",
+      "barIndex": 102215,
+      "action": "Sell",
+      "markerSet": "Training Set",
+      "comment": "",
+      "metrics": {
+        "open": 7393.25,
+        "high": 7394,
+        "low": 7392.75,
+        "close": 7392.75,
+        "ema": 7394.14
+      }
+    },
+    {
+      "timestamp": "2026-06-12T06:40:45",
+      "barIndex": 102220,
+      "action": "Sell",
+      "markerSet": "Training Set",
+      "comment": "",
+      "metrics": {
+        "open": 7389,
+        "high": 7389.75,
+        "low": 7388.5,
+        "close": 7388.5,
+        "ema": 7390.8971
+      }
+    },
+    {
+      "timestamp": "2026-06-12T06:40:47",
+      "barIndex": 102232,
+      "action": "Buy",
+      "markerSet": "Training Set",
+      "comment": "Example of a losing trade.",
+      "metrics": {
+        "open": 7393,
+        "high": 7393.25,
+        "low": 7392,
+        "close": 7393.25,
+        "ema": 7390.6795
+      }
+    },
+    {
+      "timestamp": "2026-06-12T06:40:49",
+      "barIndex": 102251,
+      "action": "Sell",
+      "markerSet": "Training Set",
+      "comment": "",
+      "metrics": {
+        "open": 7389.75,
+        "high": 7390.5,
+        "low": 7389.25,
+        "close": 7389.25,
+        "ema": 7391.2143
+      }
+    },
+    {
+      "timestamp": "2026-06-12T06:40:52",
+      "barIndex": 102270,
+      "action": "Skip",
+      "markerSet": "Training Set",
+      "comment": "Example of a pinball but no arity looking left. There are bars.",
+      "metrics": {
+        "open": 7386.75,
+        "high": 7388,
+        "low": 7386.75,
+        "close": 7386.75,
+        "ema": 7387.9879
+      }
+    },
+    {
+      "timestamp": "2026-06-12T06:41:28",
+      "barIndex": 102386,
+      "action": "Skip",
+      "markerSet": "Training Set",
+      "comment": "Pin bar with Arady but not enough of an established trend line",
+      "metrics": {
+        "open": 7390,
+        "high": 7391,
+        "low": 7389.75,
+        "close": 7389.75,
+        "ema": 7390.9911
+      }
+    },
+    {
+      "timestamp": "2026-06-12T06:44:51",
+      "barIndex": 102540,
+      "action": "Sell",
+      "markerSet": "Training Set",
+      "comment": "",
+      "metrics": {
+        "open": 7378.25,
+        "high": 7379,
+        "low": 7377.75,
+        "close": 7377.75,
+        "ema": 7380.0459
+      }
+    },
+    {
+      "timestamp": "2026-06-12T06:44:55",
+      "barIndex": 102541,
+      "action": "Sell",
+      "markerSet": "Training Set",
+      "comment": "",
+      "metrics": {
+        "open": 7377.5,
+        "high": 7378.25,
+        "low": 7377,
+        "close": 7377,
+        "ema": 7379.369
+      }
+    },
+    {
+      "timestamp": "2026-06-12T06:45:49",
+      "barIndex": 102578,
+      "action": "Sell",
+      "markerSet": "Training Set",
+      "comment": "",
+      "metrics": {
+        "open": 7373.25,
+        "high": 7374.25,
+        "low": 7373,
+        "close": 7373,
+        "ema": 7375.1549
+      }
+    },
+    {
+      "timestamp": "2026-06-12T06:49:02",
+      "barIndex": 102688,
+      "action": "Sell",
+      "markerSet": "Training Set",
+      "comment": "",
+      "metrics": {
+        "open": 7370.5,
+        "high": 7371.5,
+        "low": 7370.25,
+        "close": 7370.25,
+        "ema": 7371.7269
+      }
+    },
+    {
+      "timestamp": "2026-06-12T06:49:03",
+      "barIndex": 102689,
+      "action": "Sell",
+      "markerSet": "Training Set",
+      "comment": "",
+      "metrics": {
+        "open": 7370,
+        "high": 7370.75,
+        "low": 7369.5,
+        "close": 7369.5,
+        "ema": 7371.232
+      }
+    },
+    {
+      "timestamp": "2026-06-12T06:49:07",
+      "barIndex": 102690,
+      "action": "Sell",
+      "markerSet": "Training Set",
+      "comment": "",
+      "metrics": {
+        "open": 7369.25,
+        "high": 7370.25,
+        "low": 7369,
+        "close": 7369,
+        "ema": 7370.736
+      }
+    },
+    {
+      "timestamp": "2026-06-12T06:52:57",
+      "barIndex": 102800,
+      "action": "Buy",
+      "markerSet": "Training Set",
+      "comment": "",
+      "metrics": {
+        "open": 7378.5,
+        "high": 7378.75,
+        "low": 7377.5,
+        "close": 7378.75,
+        "ema": 7376.8111
+      }
+    },
+    {
+      "timestamp": "2026-06-12T06:54:08",
+      "barIndex": 102828,
+      "action": "Sell",
+      "markerSet": "Training Set",
+      "comment": "",
+      "metrics": {
+        "open": 7375.25,
+        "high": 7376.25,
+        "low": 7375,
+        "close": 7375,
+        "ema": 7376.7872
       }
     },
     {
@@ -1448,6 +1546,20 @@
       }
     },
     {
+      "timestamp": "2026-06-17T07:42:18",
+      "barIndex": 113928,
+      "action": "Skip",
+      "markerSet": "Training Set",
+      "comment": "Not a breakout bar.",
+      "metrics": {
+        "open": 7512.5,
+        "high": 7512.75,
+        "low": 7511.5,
+        "close": 7512.75,
+        "ema": 7511.3109
+      }
+    },
+    {
       "timestamp": "2026-06-17T07:47:17",
       "barIndex": 113983,
       "action": "Sell",
@@ -1560,6 +1672,62 @@
       }
     },
     {
+      "timestamp": "2026-06-17T07:57:39",
+      "barIndex": 114215,
+      "action": "Skip",
+      "markerSet": "Training Set",
+      "comment": "It's not a breakout bar. If you look left, there are bars immediately to the left.",
+      "metrics": {
+        "open": 7507.25,
+        "high": 7508.25,
+        "low": 7507,
+        "close": 7507,
+        "ema": 7507.9659
+      }
+    },
+    {
+      "timestamp": "2026-06-17T08:00:35",
+      "barIndex": 114244,
+      "action": "Buy",
+      "markerSet": "Training Set",
+      "comment": "Auto-breakout bar.",
+      "metrics": {
+        "open": 7507.25,
+        "high": 7507.75,
+        "low": 7506.5,
+        "close": 7507.75,
+        "ema": 7506.6727
+      }
+    },
+    {
+      "timestamp": "2026-06-17T08:12:16",
+      "barIndex": 114322,
+      "action": "Skip",
+      "markerSet": "Training Set",
+      "comment": "Not a breakout bar.",
+      "metrics": {
+        "open": 7505.5,
+        "high": 7506,
+        "low": 7504.75,
+        "close": 7506,
+        "ema": 7505.1142
+      }
+    },
+    {
+      "timestamp": "2026-06-17T08:16:16",
+      "barIndex": 114348,
+      "action": "Buy",
+      "markerSet": "Training Set",
+      "comment": "",
+      "metrics": {
+        "open": 7511.25,
+        "high": 7512.25,
+        "low": 7511,
+        "close": 7512.25,
+        "ema": 7510.3447
+      }
+    },
+    {
       "timestamp": "2026-06-17T08:34:02",
       "barIndex": 114446,
       "action": "Buy",
@@ -1571,6 +1739,76 @@
         "low": 7517.5,
         "close": 7518.75,
         "ema": 7517.6014
+      }
+    },
+    {
+      "timestamp": "2026-06-17T08:38:23",
+      "barIndex": 114464,
+      "markerSet": "Tail Arrows",
+      "tailArrow": "down",
+      "metrics": {
+        "open": 7518,
+        "high": 7518.75,
+        "low": 7517.5,
+        "close": 7518.75,
+        "ema": 7518.1666
+      }
+    },
+    {
+      "timestamp": "2026-06-17T08:42:13",
+      "barIndex": 114475,
+      "markerSet": "Tail Arrows",
+      "tailArrow": "up",
+      "metrics": {
+        "open": 7516.75,
+        "high": 7517.75,
+        "low": 7516.5,
+        "close": 7517.75,
+        "ema": 7517.8412
+      }
+    }
+  ],
+  "MESU_reg_4sec": [
+    {
+      "timestamp": "2026-06-18T06:33:28",
+      "barIndex": 75965,
+      "action": "Sell",
+      "markerSet": "Training Set",
+      "comment": "elephant bar",
+      "metrics": {
+        "open": 7572,
+        "high": 7572.25,
+        "low": 7570,
+        "close": 7570,
+        "ema": 7572.5446
+      }
+    },
+    {
+      "timestamp": "2026-06-18T06:34:48",
+      "barIndex": 75985,
+      "action": "Sell",
+      "markerSet": "Training Set",
+      "comment": "Elephant bar",
+      "metrics": {
+        "open": 7563.75,
+        "high": 7563.75,
+        "low": 7560.5,
+        "close": 7560.5,
+        "ema": 7565.8341
+      }
+    },
+    {
+      "timestamp": "2026-06-18T06:36:40",
+      "barIndex": 76013,
+      "action": "Sell",
+      "markerSet": "Training Set",
+      "comment": "Pelican bar.",
+      "metrics": {
+        "open": 7553,
+        "high": 7554,
+        "low": 7549.5,
+        "close": 7549.5,
+        "ema": 7553.25
       }
     }
   ]

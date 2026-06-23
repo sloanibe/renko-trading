@@ -182,6 +182,44 @@ body {
   gap: 4px;
 }
 
+.file-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.file-item-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.file-item-delete {
+  flex-shrink: 0;
+  background: rgba(255, 23, 68, 0.08);
+  color: var(--color-sell);
+  border: 1px solid rgba(255, 23, 68, 0.35);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.file-item-delete:hover:not(:disabled) {
+  background: var(--color-sell);
+  color: #fff;
+}
+
+.file-item-delete:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
 .file-item:hover {
   border-color: var(--primary);
   background: rgba(0, 229, 255, 0.04);
@@ -206,6 +244,19 @@ body {
 .file-meta {
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.file-name-input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--primary);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-main);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 4px 8px;
+  outline: none;
 }
 
 /* Drag & Drop Zone */
@@ -233,6 +284,220 @@ body {
 .upload-text {
   font-size: 12px;
   color: var(--text-secondary);
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+
+.dataset-import-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.dataset-import-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.dataset-field-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dataset-input {
+  width: 100%;
+  background: var(--bg-glass);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-main);
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.dataset-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.dataset-file-input {
+  display: none;
+}
+
+.dataset-import-button {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.dataset-export-folder {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dataset-export-folder-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.export-browse-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.export-browse-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.export-browse-path {
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.export-browse-close {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  padding: 4px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.export-browse-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.export-browse-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+  background: var(--bg-glass);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-main);
+  padding: 8px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.export-browse-item:hover:not(:disabled) {
+  border-color: var(--primary);
+  background: rgba(0, 229, 255, 0.04);
+}
+
+.export-browse-item:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.export-browse-icon {
+  flex-shrink: 0;
+  width: 18px;
+  text-align: center;
+}
+
+.export-browse-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dataset-export-import {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.export-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 2px;
+}
+
+.export-file-item {
+  width: 100%;
+  text-align: left;
+  background: var(--bg-glass);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-main);
+  padding: 10px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.export-file-item:hover {
+  border-color: var(--primary);
+  background: rgba(0, 229, 255, 0.04);
+}
+
+.export-file-item.active {
+  border-color: var(--primary);
+  background: rgba(0, 229, 255, 0.1);
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.export-file-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dataset-help-text {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.dataset-status {
+  font-size: 12px;
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
+.dataset-status-success {
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.08);
+  border: 1px solid rgba(34, 197, 94, 0.25);
+}
+
+.dataset-status-error {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.25);
 }
 
 /* Main Workspace */

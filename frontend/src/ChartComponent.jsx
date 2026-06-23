@@ -3,6 +3,36 @@ import { createChart, CandlestickSeries, LineSeries, createSeriesMarkers } from 
 
 const SESSION_OPEN_TIME = '06:30:00';
 
+const resolveTailArrowDirectionFromClick = (clickY, brick, yHigh, yLow, yOpen, yClose) => {
+  if ([yHigh, yLow, yOpen, yClose].some(value => value === null || value === undefined)) return null;
+
+  const bodyTop = Math.max(brick.open, brick.close);
+  const bodyBottom = Math.min(brick.open, brick.close);
+  const bodyTopY = Math.min(yOpen, yClose);
+  const bodyBottomY = Math.max(yOpen, yClose);
+  const pad = 4;
+
+  if (clickY > yLow + pad) {
+    return 'up';
+  }
+  if (clickY < yHigh - pad) {
+    return 'down';
+  }
+
+  const hasDownTail = brick.low < bodyBottom - 1e-9;
+  const hasUpTail = brick.high > bodyTop + 1e-9;
+
+  if (hasDownTail && clickY >= bodyBottomY && clickY <= yLow + pad) {
+    return clickY > (bodyBottomY + yLow) / 2 ? 'up' : 'down';
+  }
+  if (hasUpTail && clickY >= yHigh - pad && clickY <= bodyTopY) {
+    return clickY < (yHigh + bodyTopY) / 2 ? 'down' : 'up';
+  }
+
+  const bodyMidY = (bodyTopY + bodyBottomY) / 2;
+  return clickY > bodyMidY ? 'up' : 'down';
+};
+
 const formatTimeLabel = (isoString) => {
   if (!isoString) return '';
   try {
@@ -343,6 +373,7 @@ class RenkoOverlayPrimitive {
 class RenkoOverlayPaneView {
   constructor(primitive) {
     this._primitive = primitive;
+    this._renderer = new RenkoOverlayRenderer(primitive);
   }
 
   zOrder() {
@@ -350,7 +381,7 @@ class RenkoOverlayPaneView {
   }
 
   renderer() {
-    return new RenkoOverlayRenderer(this._primitive);
+    return this._renderer;
   }
 }
 
@@ -400,18 +431,17 @@ class RenkoOverlayRenderer {
 
       const width = scope.bitmapWidth;
 
+      ctx.beginPath();
       for (let price = startPrice; price <= endPrice; price += brickSize) {
         const roundedPrice = Math.round(price * 100) / 100;
         const yCoordinate = series.priceToCoordinate(roundedPrice);
         if (yCoordinate === null) continue;
 
         const y = yCoordinate * verticalPixelRatio;
-
-        ctx.beginPath();
         ctx.moveTo(0, y);
         ctx.lineTo(width, y);
-        ctx.stroke();
       }
+      ctx.stroke();
 
       // 2. Draw Bold 3px Wicks (on top of grid lines)
       ctx.lineWidth = (options.wickWidth || 3) * horizontalPixelRatio;
@@ -419,28 +449,33 @@ class RenkoOverlayRenderer {
       ctx.setLineDash([]);
       ctx.lineCap = 'butt';
 
+      ctx.beginPath();
       for (let index = firstVisibleIndex; index <= lastVisibleIndex; index += 1) {
         const item = data[index];
         const xCoordinate = chart.timeScale().timeToCoordinate(item.time);
         if (xCoordinate === null) continue;
 
         const isUp = item.close > item.open;
-        const startPrice = isUp ? item.low : item.open;
-        const endPrice = isUp ? item.open : item.high;
-        const startY = series.priceToCoordinate(startPrice);
-        const endY = series.priceToCoordinate(endPrice);
+        const wickStartPrice = isUp ? item.low : item.open;
+        const wickEndPrice = isUp ? item.open : item.high;
+        const startY = series.priceToCoordinate(wickStartPrice);
+        const endY = series.priceToCoordinate(wickEndPrice);
         if (startY === null || endY === null) continue;
 
         const x = xCoordinate * horizontalPixelRatio;
-        ctx.beginPath();
         ctx.moveTo(x, startY * verticalPixelRatio);
         ctx.lineTo(x, endY * verticalPixelRatio);
-        ctx.stroke();
       }
+      ctx.stroke();
 
       // 3. Draw solid Renko bodies edge-to-edge, matching MultiCharts geometry.
       ctx.lineWidth = (options.bodyBorderWidth || 1) * horizontalPixelRatio;
       ctx.setLineDash([]);
+      ctx.strokeStyle = options.bodyBorderColor || '#000000';
+
+      const upColor = options.upColor || '#004cff';
+      const downColor = options.downColor || '#cc1a1a';
+      const bodyRects = [];
 
       for (let index = firstVisibleIndex; index <= lastVisibleIndex; index += 1) {
         const item = data[index];
@@ -461,13 +496,25 @@ class RenkoOverlayRenderer {
           Math.abs(closeY - openY) * verticalPixelRatio
         );
 
-        ctx.fillStyle = item.close >= item.open
-          ? (options.upColor || '#004cff')
-          : (options.downColor || '#cc1a1a');
-        ctx.strokeStyle = options.bodyBorderColor || '#000000';
-        ctx.fillRect(rectLeft, rectTop, rectWidth, rectHeight);
-        ctx.strokeRect(rectLeft, rectTop, rectWidth, rectHeight);
+        bodyRects.push({
+          left: rectLeft,
+          top: rectTop,
+          width: rectWidth,
+          height: rectHeight,
+          color: item.close >= item.open ? upColor : downColor,
+        });
       }
+
+      bodyRects.forEach((rect) => {
+        ctx.fillStyle = rect.color;
+        ctx.fillRect(rect.left, rect.top, rect.width, rect.height);
+      });
+
+      ctx.beginPath();
+      bodyRects.forEach((rect) => {
+        ctx.rect(rect.left, rect.top, rect.width, rect.height);
+      });
+      ctx.stroke();
 
       // 4. Draw projected hollow pullbacks and their entry arrows.
       ctx.lineWidth = 2 * horizontalPixelRatio;
@@ -627,16 +674,11 @@ class SessionDividerPrimitive {
 class SessionDividerPaneView {
   constructor(primitive) {
     this._primitive = primitive;
-    this._positions = [];
+    this._renderer = new SessionDividerRenderer(primitive);
   }
 
   update() {
-    const timeScale = this._primitive.chart?.timeScale();
-    this._positions = timeScale
-      ? this._primitive.times
-          .map(time => timeScale.timeToCoordinate(time))
-          .filter(position => position !== null)
-      : [];
+    // Positions are computed during draw so dividers track smooth horizontal panning.
   }
 
   zOrder() {
@@ -644,42 +686,52 @@ class SessionDividerPaneView {
   }
 
   renderer() {
-    return new SessionDividerRenderer(this._positions, this._primitive.options);
+    return this._renderer;
   }
 }
 
 class SessionDividerRenderer {
-  constructor(positions, options) {
-    this._positions = positions;
-    this._options = options;
+  constructor(primitive) {
+    this._primitive = primitive;
   }
 
   draw(target) {
+    const chart = this._primitive.chart;
+    const timeScale = chart?.timeScale();
+    const options = this._primitive.options;
+    if (!timeScale) return;
+
+    const positions = this._primitive.times
+      .map(time => timeScale.timeToCoordinate(time))
+      .filter(position => position !== null);
+    if (positions.length === 0) return;
+
     target.useBitmapCoordinateSpace((scope) => {
       const ctx = scope.context;
       const pixelRatio = scope.horizontalPixelRatio;
-      ctx.lineWidth = (this._options.lineWidth || 2) * pixelRatio;
-      ctx.strokeStyle = this._options.color || '#363636';
+      ctx.lineWidth = (options.lineWidth || 2) * pixelRatio;
+      ctx.strokeStyle = options.color || '#363636';
       ctx.setLineDash([9 * pixelRatio, 7 * pixelRatio]);
 
-      this._positions.forEach((position) => {
+      ctx.beginPath();
+      positions.forEach((position) => {
         const x = position * pixelRatio;
-        ctx.beginPath();
         ctx.moveTo(x, 0);
         ctx.lineTo(x, scope.bitmapSize.height);
-        ctx.stroke();
       });
+      ctx.stroke();
 
       ctx.setLineDash([]);
     });
   }
 }
 
-class CampaignExitMarkerPrimitive {
+class TailArrowMarkerPrimitive {
   constructor(data, markers = [], options = {}) {
     this._data = data;
     this._markers = markers;
     this._options = options;
+    this._dataByTime = new Map((data || []).map(bar => [bar.time, bar]));
     this._chart = null;
     this._series = null;
     this._requestUpdate = null;
@@ -699,6 +751,140 @@ class CampaignExitMarkerPrimitive {
 
   updateData(data) {
     this._data = data;
+    this._dataByTime = new Map((data || []).map(bar => [bar.time, bar]));
+    if (this._requestUpdate) this._requestUpdate();
+  }
+
+  updateMarkers(markers) {
+    this._markers = markers || [];
+    if (this._requestUpdate) this._requestUpdate();
+  }
+
+  paneViews() {
+    return [new TailArrowMarkerPaneView(this)];
+  }
+}
+
+class TailArrowMarkerPaneView {
+  constructor(primitive) {
+    this._primitive = primitive;
+    this._renderer = new TailArrowMarkerRenderer(primitive);
+  }
+
+  zOrder() {
+    return 'top';
+  }
+
+  renderer() {
+    return this._renderer;
+  }
+}
+
+class TailArrowMarkerRenderer {
+  constructor(primitive) {
+    this._primitive = primitive;
+  }
+
+  draw(target) {
+    const chart = this._primitive._chart;
+    const series = this._primitive._series;
+    const data = this._primitive._data;
+    const markers = this._primitive._markers;
+    const options = this._primitive._options;
+    if (!chart || !series || !data?.length || !markers?.length) return;
+
+    const dataByTime = this._primitive._dataByTime;
+    const visibleRange = chart.timeScale().getVisibleLogicalRange();
+    const firstVisibleIndex = visibleRange
+      ? Math.max(0, Math.floor(visibleRange.from) - 2)
+      : 0;
+    const lastVisibleIndex = visibleRange
+      ? Math.min(data.length - 1, Math.ceil(visibleRange.to) + 2)
+      : data.length - 1;
+
+    target.useBitmapCoordinateSpace((scope) => {
+      const ctx = scope.context;
+      const hRatio = scope.horizontalPixelRatio;
+      const vRatio = scope.verticalPixelRatio;
+      const arrowWidth = (options.arrowWidth || 16) * hRatio;
+      const arrowHeight = (options.arrowHeight || 14) * vRatio;
+      const offset = (options.offset || 8) * vRatio;
+      const halfWidth = arrowWidth / 2;
+      const upColor = options.upColor || '#065f46';
+      const downColor = options.downColor || '#991b1b';
+      const strokeColor = options.strokeColor || '#111111';
+      const lineWidth = 1.5 * Math.min(hRatio, vRatio);
+
+      markers.forEach((marker) => {
+        if (marker.barIndex < firstVisibleIndex || marker.barIndex > lastVisibleIndex) return;
+
+        const bar = dataByTime.get(marker.time) || data[marker.barIndex];
+        if (!bar) return;
+
+        const xCoordinate = chart.timeScale().timeToCoordinate(bar.time);
+        const highY = series.priceToCoordinate(bar.high);
+        const lowY = series.priceToCoordinate(bar.low);
+        if (xCoordinate === null || highY === null || lowY === null) return;
+
+        const x = xCoordinate * hRatio;
+        ctx.lineWidth = lineWidth;
+        ctx.strokeStyle = strokeColor;
+
+        if (marker.direction === 'up') {
+          const baseY = lowY * vRatio + offset;
+          const tipY = baseY - arrowHeight;
+          ctx.fillStyle = upColor;
+          ctx.beginPath();
+          ctx.moveTo(x, tipY);
+          ctx.lineTo(x - halfWidth, baseY);
+          ctx.lineTo(x + halfWidth, baseY);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+          return;
+        }
+
+        const baseY = highY * vRatio - offset;
+        const tipY = baseY + arrowHeight;
+        ctx.fillStyle = downColor;
+        ctx.beginPath();
+        ctx.moveTo(x, tipY);
+        ctx.lineTo(x - halfWidth, baseY);
+        ctx.lineTo(x + halfWidth, baseY);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      });
+    });
+  }
+}
+
+class CampaignExitMarkerPrimitive {
+  constructor(data, markers = [], options = {}) {
+    this._data = data;
+    this._markers = markers;
+    this._options = options;
+    this._dataByTime = new Map((data || []).map(bar => [bar.time, bar]));
+    this._chart = null;
+    this._series = null;
+    this._requestUpdate = null;
+  }
+
+  attached(param) {
+    this._chart = param.chart;
+    this._series = param.series;
+    this._requestUpdate = param.requestUpdate;
+  }
+
+  detached() {
+    this._chart = null;
+    this._series = null;
+    this._requestUpdate = null;
+  }
+
+  updateData(data) {
+    this._data = data;
+    this._dataByTime = new Map((data || []).map(bar => [bar.time, bar]));
     if (this._requestUpdate) this._requestUpdate();
   }
 
@@ -715,6 +901,7 @@ class CampaignExitMarkerPrimitive {
 class CampaignExitMarkerPaneView {
   constructor(primitive) {
     this._primitive = primitive;
+    this._renderer = new CampaignExitMarkerRenderer(primitive);
   }
 
   zOrder() {
@@ -722,7 +909,7 @@ class CampaignExitMarkerPaneView {
   }
 
   renderer() {
-    return new CampaignExitMarkerRenderer(this._primitive);
+    return this._renderer;
   }
 }
 
@@ -739,7 +926,7 @@ class CampaignExitMarkerRenderer {
     const options = this._primitive._options;
     if (!chart || !series || !data?.length || !markers?.length) return;
 
-    const dataByTime = new Map(data.map(bar => [bar.time, bar]));
+    const dataByTime = this._primitive._dataByTime;
     const visibleRange = chart.timeScale().getVisibleLogicalRange();
     const firstVisibleIndex = visibleRange
       ? Math.max(0, Math.floor(visibleRange.from) - 2)
@@ -845,6 +1032,8 @@ export default function ChartComponent({
   secondaryData = [],
   annotations,
   onBrickClick,
+  onAddTailArrowAnnotation,
+  onClearTailArrowAnnotations,
   onHaSelectionChange,
   bookmark,
   onSetBookmark,
@@ -866,18 +1055,26 @@ export default function ChartComponent({
   const secondaryMa2SeriesRef = useRef(null);
   const renkoOverlayRef = useRef(null);
   const campaignExitMarkerRef = useRef(null);
+  const tailArrowMarkerRef = useRef(null);
   const markersPluginRef = useRef(null);
   const sliderRef = useRef(null);
   const sliderStartTextRef = useRef(null);
   const sliderEndTextRef = useRef(null);
   const crosshairBarIndexRef = useRef(null);
+  const isPrimaryDraggingRef = useRef(false);
+  const pendingSliderRangeRef = useRef(null);
+  const sliderSyncRafRef = useRef(null);
+  const lockedRenkoPriceRef = useRef(null);
   const primaryFormattedDataRef = useRef([]);
   const secondaryFormattedDataRef = useRef([]);
   const primaryBarByChartTimeRef = useRef(new Map());
   const secondaryBarByChartTimeRef = useRef(new Map());
   const isSyncingCrosshairRef = useRef(false);
   const suppressNextClickRef = useRef(false);
+  const onAddTailArrowAnnotationRef = useRef(onAddTailArrowAnnotation);
+  const onClearTailArrowAnnotationsRef = useRef(onClearTailArrowAnnotations);
   const longPressTimerRef = useRef(null);
+  const longPressMoveListenerRef = useRef(null);
   const hasSecondaryPaneRef = useRef(false);
   const haSelectionRef = useRef(null);
   const haSelectionDragRef = useRef(null);
@@ -889,6 +1086,14 @@ export default function ChartComponent({
   const haSelectionHighlightRef = useRef(null);
   const [jumpDateInput, setJumpDateInput] = useState('');
   const [jumpError, setJumpError] = useState('');
+
+  useEffect(() => {
+    onAddTailArrowAnnotationRef.current = onAddTailArrowAnnotation;
+  }, [onAddTailArrowAnnotation]);
+
+  useEffect(() => {
+    onClearTailArrowAnnotationsRef.current = onClearTailArrowAnnotations;
+  }, [onClearTailArrowAnnotations]);
   const [selectedMonthKey, setSelectedMonthKey] = useState(null);
   const [isDaySelectorOpen, setIsDaySelectorOpen] = useState(false);
 
@@ -1051,6 +1256,14 @@ export default function ChartComponent({
     const currentPosition = sessionOpens.findLastIndex(index => index <= anchorIndex);
     const previousSession = sessionOpens[currentPosition - 1];
     if (Number.isInteger(previousSession)) goToBarIndex(previousSession);
+  };
+
+  const handleGoToNextSession = () => {
+    const sessionOpens = getSessionOpenIndices(data || []);
+    const anchorIndex = getNavigationAnchorIndex();
+    const currentPosition = sessionOpens.findLastIndex(index => index <= anchorIndex);
+    const nextSession = sessionOpens[currentPosition + 1];
+    if (Number.isInteger(nextSession)) goToBarIndex(nextSession);
   };
 
   const handleZoomIn = () => {
@@ -1237,6 +1450,10 @@ export default function ChartComponent({
       from: nextFrom,
       to: nextTo,
     });
+
+    if (source === 'primary' && !isRegularCandlestick) {
+      lockedRenkoPriceRef.current = { from: nextFrom, to: nextTo };
+    }
   };
 
   const mapSelectionBar = (bar) => ({
@@ -1394,10 +1611,24 @@ export default function ChartComponent({
     const container = source === 'primary' ? chartContainerRef.current : secondaryChartContainerRef.current;
     if (!container) return;
 
-    window.clearTimeout(longPressTimerRef.current);
+    cancelLongPressSync();
     const rect = container.getBoundingClientRect();
     const x = event.clientX - rect.left;
+    const startX = event.clientX;
+    const startY = event.clientY;
+
+    const cancelOnMove = (moveEvent) => {
+      const dx = moveEvent.clientX - startX;
+      const dy = moveEvent.clientY - startY;
+      if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+        cancelLongPressSync();
+      }
+    };
+    longPressMoveListenerRef.current = cancelOnMove;
+    window.addEventListener('mousemove', cancelOnMove, true);
+
     longPressTimerRef.current = window.setTimeout(() => {
+      cancelLongPressSync();
       suppressNextClickRef.current = true;
       const sourceBar = getNearestSourceBarFromCoordinate(source, x);
       if (!sourceBar) return;
@@ -1414,6 +1645,10 @@ export default function ChartComponent({
   const cancelLongPressSync = () => {
     window.clearTimeout(longPressTimerRef.current);
     longPressTimerRef.current = null;
+    if (longPressMoveListenerRef.current) {
+      window.removeEventListener('mousemove', longPressMoveListenerRef.current, true);
+      longPressMoveListenerRef.current = null;
+    }
   };
 
   const handleSplitterMouseDown = (event) => {
@@ -1468,6 +1703,16 @@ export default function ChartComponent({
     const chart = createChart(chartContainerRef.current, {
       width: chartContainerRef.current.clientWidth,
       height: chartContainerRef.current.clientHeight,
+      handleScroll: {
+        mouseWheel: true,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: false,
+      },
+      kineticScroll: {
+        touch: true,
+        mouse: false,
+      },
       layout: {
         background: { color: '#9c9c9c' }, // MultiCharts neutral gray background
         textColor: '#000000', // Black labels for high contrast on gray background
@@ -1550,22 +1795,12 @@ export default function ChartComponent({
     ]));
     const minimumVisibleBricks = 18;
     const lockedPriceSpan = Math.max(inferredBrickSize * minimumVisibleBricks, initialMaxPrice - initialMinPrice);
-    const constantPriceSpan = original => {
-      const autoscaleInfo = original();
-      if (!autoscaleInfo) return null;
-
-      const center = (
-        autoscaleInfo.priceRange.minValue +
-        autoscaleInfo.priceRange.maxValue
-      ) / 2;
-      return {
-        ...autoscaleInfo,
-        priceRange: {
-          minValue: center - lockedPriceSpan / 2,
-          maxValue: center + lockedPriceSpan / 2,
-        },
-      };
-    };
+    const initialPriceCenter = (initialMinPrice + initialMaxPrice) / 2;
+    const fixedPriceMin = initialPriceCenter - lockedPriceSpan / 2;
+    const fixedPriceMax = initialPriceCenter + lockedPriceSpan / 2;
+    if (!isRegularCandlestick) {
+      lockedRenkoPriceRef.current = { from: fixedPriceMin, to: fixedPriceMax };
+    }
 
     // Add Candlestick Series (for Renko Bricks + Wicks, or standard wicks/borders if regular)
     const candlestickSeriesOptions = isRegularCandlestick ? {
@@ -1583,7 +1818,16 @@ export default function ChartComponent({
       downColor: 'rgba(0, 0, 0, 0)',
       borderVisible: false,
       wickVisible: false,      // Hide default 1px wicks (our custom primitive draws thick wicks)
-      autoscaleInfoProvider: constantPriceSpan,
+      autoscaleInfoProvider: () => {
+        const range = lockedRenkoPriceRef.current;
+        if (!range) return null;
+        return {
+          priceRange: {
+            minValue: range.from,
+            maxValue: range.to,
+          },
+        };
+      },
     };
     const candlestickSeries = chart.addSeries(CandlestickSeries, candlestickSeriesOptions);
     candlestickSeriesRef.current = candlestickSeries;
@@ -1647,6 +1891,16 @@ export default function ChartComponent({
     });
     candlestickSeries.attachPrimitive(campaignExitMarker);
     campaignExitMarkerRef.current = campaignExitMarker;
+    const tailArrowMarker = new TailArrowMarkerPrimitive(formattedData, [], {
+      upColor: '#065f46',
+      downColor: '#991b1b',
+      strokeColor: '#111111',
+      arrowWidth: 18,
+      arrowHeight: 16,
+      offset: 28,
+    });
+    candlestickSeries.attachPrimitive(tailArrowMarker);
+    tailArrowMarkerRef.current = tailArrowMarker;
 
     // Populate EMA Series
     const ema5Data = formattedData
@@ -1677,9 +1931,8 @@ export default function ChartComponent({
       chart.timeScale().fitContent();
     }
 
-    // Sync slider with chart scroll
-    const handleVisibleRangeChange = (logicalRange) => {
-      if (!logicalRange) return;
+    // Sync slider with chart scroll (batched; skipped while actively dragging)
+    const applySliderSync = (logicalRange) => {
       const from = logicalRange.from;
       const to = logicalRange.to;
       const width = to - from;
@@ -1703,8 +1956,36 @@ export default function ChartComponent({
         }
       }
     };
+
+    const scheduleSliderSync = () => {
+      if (sliderSyncRafRef.current !== null) return;
+      sliderSyncRafRef.current = requestAnimationFrame(() => {
+        sliderSyncRafRef.current = null;
+        if (!isPrimaryDraggingRef.current && pendingSliderRangeRef.current) {
+          applySliderSync(pendingSliderRangeRef.current);
+        }
+      });
+    };
+
+    const flushSliderSync = () => {
+      if (sliderSyncRafRef.current !== null) {
+        cancelAnimationFrame(sliderSyncRafRef.current);
+        sliderSyncRafRef.current = null;
+      }
+      if (pendingSliderRangeRef.current) {
+        applySliderSync(pendingSliderRangeRef.current);
+      }
+    };
+
+    const handleVisibleRangeChange = (logicalRange) => {
+      if (!logicalRange) return;
+      pendingSliderRangeRef.current = logicalRange;
+      if (isPrimaryDraggingRef.current) return;
+      scheduleSliderSync();
+    };
     chart.timeScale().subscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
     chart.subscribeCrosshairMove((param) => {
+      if (isPrimaryDraggingRef.current) return;
       if (!param?.time) {
         clearSyncedCrosshair('primary');
         return;
@@ -1740,12 +2021,69 @@ export default function ChartComponent({
 
     chartContainerRef.current.addEventListener('contextmenu', handleContextMenu, true);
     const handlePrimaryMouseDown = (event) => {
-      if (event.button === 0) startLongPressSync('primary', event);
+      if (event.button === 0 && event.altKey && onAddTailArrowAnnotationRef.current && chartContainerRef.current) {
+        const rect = chartContainerRef.current.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+        const logicalIndex = chart.timeScale().coordinateToLogical(x);
+        const barIndex = logicalIndex === null ? -1 : Math.round(logicalIndex);
+        const clickedBrick = formattedData[barIndex];
+
+        if (clickedBrick) {
+          const yHigh = candlestickSeries.priceToCoordinate(clickedBrick.high);
+          const yLow = candlestickSeries.priceToCoordinate(clickedBrick.low);
+          const yOpen = candlestickSeries.priceToCoordinate(clickedBrick.open);
+          const yClose = candlestickSeries.priceToCoordinate(clickedBrick.close);
+          const direction = resolveTailArrowDirectionFromClick(
+            y,
+            clickedBrick,
+            yHigh,
+            yLow,
+            yOpen,
+            yClose
+          );
+
+          if (direction) {
+            event.preventDefault();
+            event.stopPropagation();
+            suppressNextClickRef.current = true;
+            cancelLongPressSync();
+            onAddTailArrowAnnotationRef.current(clickedBrick, direction);
+            return;
+          }
+        }
+      }
+
+      if (event.button === 0) {
+        isPrimaryDraggingRef.current = true;
+        startLongPressSync('primary', event);
+      }
+    };
+    const handlePrimaryMouseUp = () => {
+      cancelLongPressSync();
+      if (!isRegularCandlestick && chart) {
+        const range = chart.priceScale('right').getVisibleRange();
+        const locked = lockedRenkoPriceRef.current;
+        if (range && locked) {
+          if (isPrimaryDraggingRef.current) {
+            if (Math.abs(range.from - locked.from) > 0.001 || Math.abs(range.to - locked.to) > 0.001) {
+              chart.priceScale('right').setVisibleRange(locked);
+            }
+          } else {
+            lockedRenkoPriceRef.current = { from: range.from, to: range.to };
+          }
+        }
+      }
+      if (isPrimaryDraggingRef.current) {
+        isPrimaryDraggingRef.current = false;
+        flushSliderSync();
+      }
     };
     const handlePrimaryWheel = (event) => handleVerticalWheelZoom('primary', event);
     chartContainerRef.current.addEventListener('mousedown', handlePrimaryMouseDown, true);
-    chartContainerRef.current.addEventListener('mouseup', cancelLongPressSync, true);
-    chartContainerRef.current.addEventListener('mouseleave', cancelLongPressSync, true);
+    chartContainerRef.current.addEventListener('mouseup', handlePrimaryMouseUp, true);
+    window.addEventListener('mouseup', handlePrimaryMouseUp);
+    chartContainerRef.current.addEventListener('mouseleave', handlePrimaryMouseUp, true);
     chartContainerRef.current.addEventListener('wheel', handlePrimaryWheel, { passive: false });
 
     // Handle Clicks for Annotation Placement (only on the actual bar)
@@ -1789,15 +2127,23 @@ export default function ChartComponent({
 
     return () => {
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('mouseup', handlePrimaryMouseUp);
+      if (sliderSyncRafRef.current !== null) {
+        cancelAnimationFrame(sliderSyncRafRef.current);
+        sliderSyncRafRef.current = null;
+      }
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
       chartContainerRef.current?.removeEventListener('contextmenu', handleContextMenu, true);
       chartContainerRef.current?.removeEventListener('mousedown', handlePrimaryMouseDown, true);
-      chartContainerRef.current?.removeEventListener('mouseup', cancelLongPressSync, true);
-      chartContainerRef.current?.removeEventListener('mouseleave', cancelLongPressSync, true);
+      chartContainerRef.current?.removeEventListener('mouseup', handlePrimaryMouseUp, true);
+      chartContainerRef.current?.removeEventListener('mouseleave', handlePrimaryMouseUp, true);
       chartContainerRef.current?.removeEventListener('wheel', handlePrimaryWheel);
       chart.remove();
       markersPluginRef.current = null;
       renkoOverlayRef.current = null;
       campaignExitMarkerRef.current = null;
+      tailArrowMarkerRef.current = null;
+      lockedRenkoPriceRef.current = null;
       primaryFormattedDataRef.current = [];
       primaryBarByChartTimeRef.current = new Map();
     };
@@ -1816,6 +2162,16 @@ export default function ChartComponent({
     const chart = createChart(secondaryChartContainerRef.current, {
       width: secondaryChartContainerRef.current.clientWidth,
       height: secondaryChartContainerRef.current.clientHeight,
+      handleScroll: {
+        mouseWheel: true,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: false,
+      },
+      kineticScroll: {
+        touch: true,
+        mouse: false,
+      },
       layout: {
         background: { color: '#9c9c9c' },
         textColor: '#000000',
@@ -2081,10 +2437,27 @@ export default function ChartComponent({
     // Build Chart Markers
     const markers = [];
     const campaignExitMarkers = [];
+    const tailArrowMarkers = [];
     if (annotations && annotations.length > 0) {
       annotations.forEach(ann => {
         const chartTime = resolveAnnotationTime(ann);
         if (chartTime) {
+          if (ann.tailArrow === 'up') {
+            tailArrowMarkers.push({
+              time: chartTime,
+              barIndex: ann.barIndex,
+              direction: 'up',
+            });
+            return;
+          }
+          if (ann.tailArrow === 'down') {
+            tailArrowMarkers.push({
+              time: chartTime,
+              barIndex: ann.barIndex,
+              direction: 'down',
+            });
+            return;
+          }
           if (ann.isYellowMomentumCampaignEntry) {
             markers.push({
               time: chartTime,
@@ -2278,6 +2651,16 @@ export default function ChartComponent({
               });
               return;
             }
+            if (ann.signalSet === 9) {
+              markers.push({
+                time: chartTime,
+                position: 'belowBar',
+                color: '#f97316',
+                shape: 'arrowUp',
+                text: '',
+              });
+              return;
+            }
             if (ann.signalSet === 3) {
               if (ann.setupType === 'synthetic') return;
               markers.push({
@@ -2338,6 +2721,16 @@ export default function ChartComponent({
               });
               return;
             }
+            if (ann.signalSet === 9) {
+              markers.push({
+                time: chartTime,
+                position: 'aboveBar',
+                color: '#f97316',
+                shape: 'arrowDown',
+                text: '',
+              });
+              return;
+            }
             if (ann.signalSet === 3) {
               if (ann.setupType === 'synthetic') return;
               markers.push({
@@ -2380,6 +2773,8 @@ export default function ChartComponent({
     });
 
     campaignExitMarkerRef.current?.updateMarkers(campaignExitMarkers);
+    tailArrowMarkerRef.current?.updateData(primaryFormattedDataRef.current);
+    tailArrowMarkerRef.current?.updateMarkers(tailArrowMarkers);
 
     if (!markersPluginRef.current) {
       markersPluginRef.current = createSeriesMarkers(candlestickSeriesRef.current, finalMarkers);
@@ -2650,6 +3045,20 @@ export default function ChartComponent({
             title="Go to the previous trading session open"
           >
             Previous Session
+          </button>
+          <button
+            onClick={handleGoToNextSession}
+            className="control-btn"
+            title="Go to the next trading session open at 06:30"
+          >
+            Next Session
+          </button>
+          <button
+            onClick={() => onClearTailArrowAnnotationsRef.current?.()}
+            className="control-btn"
+            title="Remove all tail arrow drawings for this chart"
+          >
+            Clear Tail Arrows
           </button>
           <button
             onClick={handleGoToSessionOpen}

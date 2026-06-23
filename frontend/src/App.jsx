@@ -4,6 +4,12 @@ import ChartComponent from './ChartComponent';
 const API_BASE = 'http://localhost:5000/api';
 const ACTIVE_CHART_STORAGE_KEY = 'renko-active-chart';
 const RAW_RANGE_MARKER_SET = 'Raw Range Bar Set';
+const TAIL_ARROWS_MARKER_SET = 'Tail Arrows';
+
+const isTailArrowAnnotation = annotation =>
+  annotation?.tailArrow === 'up' ||
+  annotation?.tailArrow === 'down' ||
+  annotation?.markerSet === TAIL_ARROWS_MARKER_SET;
 const CAMPAIGN_OPTIONS = {
   yellowMomentum: {
     label: 'Yellow Momentum 1:1',
@@ -32,6 +38,10 @@ const CAMPAIGN_OPTIONS = {
 };
 const bookmarkStorageKey = chartName => `renko-bookmark:${chartName}`;
 const MARKER_SETTINGS_STORAGE_KEY = 'renko-marker-settings';
+const MES_RANGE_CAMPAIGN_CHARTS = ['MESM_reg_5', 'MESU_reg_5pt', 'MES_8pt', 'MES_3pt', 'MES3 Point Range'];
+const isMesRangeCampaignChart = chartName => MES_RANGE_CAMPAIGN_CHARTS.includes(chartName);
+const isNineEmaChart = chartName =>
+  chartName?.includes('8pt') || chartName?.includes('3pt') || chartName === 'MES3 Point Range';
 const defaultMarkerSetForChart = chartName =>
   chartName?.includes('Range') || chartName === 'MES3' ? RAW_RANGE_MARKER_SET : 'Training Set';
 
@@ -79,6 +89,15 @@ export default function App() {
   const [bookmark, setBookmark] = useState(null);
   const [annotationsDrawerOpen, setAnnotationsDrawerOpen] = useState(false);
   const [datasetsDrawerOpen, setDatasetsDrawerOpen] = useState(false);
+  const [datasetActionStatus, setDatasetActionStatus] = useState('');
+  const [datasetActionError, setDatasetActionError] = useState('');
+  const [importingDataset, setImportingDataset] = useState(false);
+  const [deletingDataset, setDeletingDataset] = useState('');
+  const [datasetContextMenu, setDatasetContextMenu] = useState(null);
+  const [renamingChart, setRenamingChart] = useState('');
+  const [renameValue, setRenameValue] = useState('');
+  const [renamingSubmitting, setRenamingSubmitting] = useState(false);
+  const importFileInputRef = React.useRef(null);
 
   // Strategy Configuration states
   const [slopeThreshold, setSlopeThreshold] = useState(2.0);
@@ -98,6 +117,7 @@ export default function App() {
   const [showMes3HaEmaApproachSignals, setShowMes3HaEmaApproachSignals] = useState(savedMarkerSettings.showMes3HaEmaApproachSignals ?? true);
   const [showMesReg5LongTailSignals, setShowMesReg5LongTailSignals] = useState(savedMarkerSettings.showMesReg5LongTailSignals ?? true);
   const [showMesReg5EmaBounceAritySignals, setShowMesReg5EmaBounceAritySignals] = useState(savedMarkerSettings.showMesReg5EmaBounceAritySignals ?? true);
+  const [showMesReg5PinBarBreakoutSignals, setShowMesReg5PinBarBreakoutSignals] = useState(savedMarkerSettings.showMesReg5PinBarBreakoutSignals ?? true);
   const [showCampaignTrades, setShowCampaignTrades] = useState(savedMarkerSettings.showCampaignTrades ?? true);
   const [campaignView, setCampaignView] = useState(savedMarkerSettings.campaignView ?? 'yellowMomentum');
   const [aridLookback, setAridLookback] = useState(8);
@@ -333,13 +353,20 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (datasetsDrawerOpen) {
+      setDatasetActionStatus('');
+      setDatasetActionError('');
+    }
+  }, [datasetsDrawerOpen]);
+
+  useEffect(() => {
     if (activeChart) {
       localStorage.setItem(ACTIVE_CHART_STORAGE_KEY, activeChart);
     }
   }, [activeChart]);
 
   useEffect(() => {
-    if (['MESM_reg_5', 'MES_8pt', 'MES_3pt'].includes(activeChart) && campaignView !== 'mesReg5Recovery') {
+    if (isMesRangeCampaignChart(activeChart) && campaignView !== 'mesReg5Recovery') {
       setCampaignView('mesReg5Recovery');
     }
   }, [activeChart, campaignView]);
@@ -355,6 +382,7 @@ export default function App() {
       showMes3HaEmaApproachSignals,
       showMesReg5LongTailSignals,
       showMesReg5EmaBounceAritySignals,
+      showMesReg5PinBarBreakoutSignals,
       showCampaignTrades,
       showSecondaryPane,
       campaignView,
@@ -369,6 +397,7 @@ export default function App() {
     showMes3HaEmaApproachSignals,
     showMesReg5LongTailSignals,
     showMesReg5EmaBounceAritySignals,
+    showMesReg5PinBarBreakoutSignals,
     showCampaignTrades,
     showSecondaryPane,
     campaignView,
@@ -479,6 +508,172 @@ export default function App() {
       setSecondaryChartData([]);
     }
   };
+
+  const deriveDatasetName = (fileName) => fileName.replace(/\.[^./\\]+$/, '');
+
+  const handleMultichartsFileChosen = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    const name = deriveDatasetName(file.name);
+    setImportingDataset(true);
+    setDatasetActionStatus('');
+    setDatasetActionError('');
+
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const res = await fetch(`${API_BASE}/charts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, data }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(result.details || result.error || `Import failed (${res.status})`);
+      }
+
+      await fetchCharts();
+      setActiveChart(result.name);
+      setDatasetsDrawerOpen(false);
+      setDatasetActionStatus(`Imported "${result.name}" (${result.barCount} bars).`);
+    } catch (err) {
+      console.error('Failed to import dataset:', err);
+      setDatasetActionError(
+        err instanceof SyntaxError
+          ? 'That file is not valid JSON chart data.'
+          : (err.message || 'Failed to import dataset.')
+      );
+    } finally {
+      setImportingDataset(false);
+    }
+  };
+
+  const handleDeleteDataset = async (chartName, event) => {
+    event.stopPropagation();
+    if (deletingDataset) return;
+
+    const confirmed = window.confirm(
+      `Delete "${chartName}"?\n\nThis removes the dataset file from data/ and clears its annotations.`
+    );
+    if (!confirmed) return;
+
+    setDeletingDataset(chartName);
+    setDatasetActionStatus('');
+    setDatasetActionError('');
+
+    try {
+      const res = await fetch(`${API_BASE}/charts/${encodeURIComponent(chartName)}`, {
+        method: 'DELETE',
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(result.details || result.error || `Delete failed (${res.status})`);
+      }
+
+      const remainingCharts = charts.filter(c => c !== chartName);
+      setCharts(remainingCharts);
+
+      const updatedAnnotations = { ...allAnnotations };
+      delete updatedAnnotations[chartName];
+      setAllAnnotations(updatedAnnotations);
+
+      if (activeChart === chartName) {
+        const nextChart = remainingCharts[0] || '';
+        setActiveChart(nextChart);
+        if (!nextChart) {
+          setChartData([]);
+          setSecondaryChartData([]);
+          setBacktestResults(null);
+          setBookmark(null);
+        }
+      }
+
+      setDatasetActionStatus(`Deleted "${chartName}".`);
+    } catch (err) {
+      console.error('Failed to delete dataset:', err);
+      setDatasetActionError(err.message || 'Failed to delete dataset.');
+    } finally {
+      setDeletingDataset('');
+    }
+  };
+
+  // Rename a dataset (file move + annotation re-key handled server-side).
+  const handleRenameDataset = async (oldName, rawNewName) => {
+    const newName = (rawNewName || '').trim();
+    if (!newName) {
+      setDatasetActionError('Name cannot be empty.');
+      return;
+    }
+    if (newName === oldName) {
+      setRenamingChart('');
+      return;
+    }
+
+    setRenamingSubmitting(true);
+    setDatasetActionStatus('');
+    setDatasetActionError('');
+
+    try {
+      const res = await fetch(`${API_BASE}/charts/${encodeURIComponent(oldName)}/rename`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newName }),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(result.details || result.error || `Rename failed (${res.status})`);
+      }
+
+      setCharts(prev => prev.map(c => (c === oldName ? newName : c)));
+
+      setAllAnnotations(prev => {
+        if (!(oldName in prev)) return prev;
+        const reordered = {};
+        for (const [key, value] of Object.entries(prev)) {
+          reordered[key === oldName ? newName : key] = value;
+        }
+        return reordered;
+      });
+
+      if (activeChart === oldName) {
+        setActiveChart(newName);
+        try {
+          localStorage.setItem(ACTIVE_CHART_STORAGE_KEY, newName);
+        } catch {
+          /* localStorage may be unavailable; non-fatal */
+        }
+      }
+
+      setRenamingChart('');
+      setDatasetActionStatus(`Renamed "${oldName}" to "${newName}".`);
+    } catch (err) {
+      console.error('Failed to rename dataset:', err);
+      setDatasetActionError(err.message || 'Failed to rename dataset.');
+      // keep edit mode open so the user can correct the name
+    } finally {
+      setRenamingSubmitting(false);
+    }
+  };
+
+  // Close the dataset context menu on outside interaction (mirrors the chart's
+  // context-menu close logic in ChartComponent.jsx).
+  useEffect(() => {
+    if (!datasetContextMenu) return;
+    const closeMenu = () => setDatasetContextMenu(null);
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') closeMenu();
+    };
+    window.addEventListener('click', closeMenu);
+    window.addEventListener('contextmenu', closeMenu);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('click', closeMenu);
+      window.removeEventListener('contextmenu', closeMenu);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [datasetContextMenu]);
 
   const handleHaSelectionChange = async (selection) => {
     setCurrentHaSelection(selection);
@@ -664,7 +859,7 @@ export default function App() {
 
     const activeAnnotations = [...(allAnnotations[activeChart] || [])];
     const targetTime = selectedBrick.originalTime || selectedBrick.time;
-    
+
     const newAnnotation = {
       timestamp: targetTime,
       barIndex: selectedBrick.originalIndex,
@@ -679,28 +874,23 @@ export default function App() {
         ema: selectedBrick.ema,
         ema5: selectedBrick.ema5,
         ema10: selectedBrick.ema10,
-      }
+      },
     };
 
     const index = activeAnnotations.findIndex(annotation => annotationMatchesBrick(annotation, selectedBrick));
     if (index !== -1) {
-      // Update existing
       activeAnnotations[index] = newAnnotation;
     } else {
-      // Add new
       activeAnnotations.push(newAnnotation);
     }
 
-    // Sort chronologically by timestamp
     activeAnnotations.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-    // Optimistically update UI
     const updated = { ...allAnnotations, [activeChart]: activeAnnotations };
     setAllAnnotations(updated);
     setShowTrainingAnnotations(true);
     setModalOpen(false);
 
-    // Persist to disk via Node Express server
     try {
       const response = await fetch(`${API_BASE}/annotations`, {
         method: 'POST',
@@ -718,6 +908,92 @@ export default function App() {
     }
   };
 
+  const handleAddTailArrowAnnotation = async (brick, direction) => {
+    if (!brick || !activeChart || (direction !== 'up' && direction !== 'down')) return;
+
+    const activeAnnotations = [...(allAnnotations[activeChart] || [])];
+    const newAnnotation = {
+      timestamp: brick.originalTime || brick.time,
+      barIndex: brick.originalIndex,
+      markerSet: TAIL_ARROWS_MARKER_SET,
+      tailArrow: direction,
+      metrics: {
+        open: brick.open,
+        high: brick.high,
+        low: brick.low,
+        close: brick.close,
+        ema: brick.ema,
+        ema5: brick.ema5,
+        ema10: brick.ema10,
+      },
+    };
+
+    const existingIndex = activeAnnotations.findIndex(
+      annotation =>
+        annotation.markerSet === TAIL_ARROWS_MARKER_SET &&
+        annotation.tailArrow === direction &&
+        annotationMatchesBrick(annotation, brick)
+    );
+
+    if (existingIndex !== -1) {
+      activeAnnotations[existingIndex] = newAnnotation;
+    } else {
+      activeAnnotations.push(newAnnotation);
+    }
+
+    activeAnnotations.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    const previousAnnotations = allAnnotations;
+    const updated = { ...allAnnotations, [activeChart]: activeAnnotations };
+    setAllAnnotations(updated);
+
+    try {
+      const response = await fetch(`${API_BASE}/annotations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileKey: activeChart, annotations: activeAnnotations }),
+      });
+      if (!response.ok) {
+        const details = await response.json().catch(() => ({}));
+        throw new Error(details.error || `Annotation server returned ${response.status}`);
+      }
+    } catch (err) {
+      console.error('Failed to save tail arrow annotation:', err);
+      setAllAnnotations(previousAnnotations);
+      alert('Failed to save tail arrow. Make sure the API server is running on port 5000.');
+    }
+  };
+
+  const handleClearTailArrowAnnotations = async () => {
+    if (!activeChart) return;
+
+    const activeAnnotations = (allAnnotations[activeChart] || []).filter(
+      annotation => annotation.markerSet !== TAIL_ARROWS_MARKER_SET
+    );
+    const removedCount = (allAnnotations[activeChart] || []).length - activeAnnotations.length;
+    if (removedCount === 0) return;
+
+    const previousAnnotations = allAnnotations;
+    const updated = { ...allAnnotations, [activeChart]: activeAnnotations };
+    setAllAnnotations(updated);
+
+    try {
+      const response = await fetch(`${API_BASE}/annotations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileKey: activeChart, annotations: activeAnnotations }),
+      });
+      if (!response.ok) {
+        const details = await response.json().catch(() => ({}));
+        throw new Error(details.error || `Annotation server returned ${response.status}`);
+      }
+    } catch (err) {
+      console.error('Failed to clear tail arrow annotations:', err);
+      setAllAnnotations(previousAnnotations);
+      alert('Failed to clear tail arrows. Make sure the API server is running on port 5000.');
+    }
+  };
+
   const handleDeleteAnnotation = async () => {
     if (!selectedBrick) return;
 
@@ -725,7 +1001,6 @@ export default function App() {
       annotation => !annotationMatchesBrick(annotation, selectedBrick)
     );
 
-    // Optimistically update UI
     const updated = { ...allAnnotations, [activeChart]: activeAnnotations };
     setAllAnnotations(updated);
     setModalOpen(false);
@@ -774,12 +1049,22 @@ export default function App() {
   const availableMarkerSets = React.useMemo(() => {
     const sets = new Set([RAW_RANGE_MARKER_SET, 'Training Set']);
     savedAnnotations.forEach(ann => {
-      if (ann.markerSet) {
+      if (ann.markerSet && !isTailArrowAnnotation(ann)) {
         sets.add(ann.markerSet);
       }
     });
     return [...sets].sort();
   }, [savedAnnotations]);
+
+  const tailArrowAnnotations = React.useMemo(
+    () => savedAnnotations.filter(isTailArrowAnnotation),
+    [savedAnnotations]
+  );
+
+  const trainingAnnotationCount = React.useMemo(
+    () => savedAnnotations.filter(ann => !isTailArrowAnnotation(ann)).length,
+    [savedAnnotations]
+  );
 
   // Construct annotations to pass to ChartComponent, including a temporary preview if the modal is open
   const currentAnnotations = React.useMemo(() => {
@@ -816,21 +1101,27 @@ export default function App() {
     }
   }, [savedAnnotations, modalOpen, selectedBrick, selectedAction, selectedMarkerSet, commentText, activeChart]);
 
-  // Filtered annotations based on visibleMarkerSets state
-  const filteredManualAnnotations = React.useMemo(() => {
+  const filteredTrainingAnnotations = React.useMemo(() => {
     return currentAnnotations.filter(ann => {
+      if (isTailArrowAnnotation(ann)) return false;
       if (ann.isPreview) return true;
       const set = ann.markerSet || defaultMarkerSetForChart(activeChart);
       return visibleMarkerSets[set] !== false;
     });
   }, [currentAnnotations, visibleMarkerSets, activeChart]);
 
+  const filteredManualAnnotations = React.useMemo(
+    () => [...filteredTrainingAnnotations, ...tailArrowAnnotations],
+    [filteredTrainingAnnotations, tailArrowAnnotations]
+  );
+
   // Merge user annotations, system signals, and campaign trades for chart display
   const mergedAnnotations = React.useMemo(() => {
-    const shouldShowManualAnnotations = showTrainingAnnotations || modalOpen;
-    const merged = shouldShowManualAnnotations
-      ? [...filteredManualAnnotations]
-      : filteredManualAnnotations.filter(annotation => annotation.isPreview);
+    const shouldShowTrainingAnnotations = showTrainingAnnotations || modalOpen;
+    const merged = [
+      ...tailArrowAnnotations,
+      ...(shouldShowTrainingAnnotations ? filteredTrainingAnnotations : filteredTrainingAnnotations.filter(annotation => annotation.isPreview)),
+    ];
     
     // 1. Add every raw strategy signal, including signals skipped by the campaign.
     if (showRawSignals && backtestResults?.signal_details) {
@@ -954,7 +1245,7 @@ export default function App() {
       });
     }
 
-    if (showMesReg5LongTailSignals && ['MESM_reg_5', 'MES_8pt', 'MES_3pt'].includes(activeChart) && backtestResults?.mes_reg5_long_tail_details) {
+    if (showMesReg5LongTailSignals && isMesRangeCampaignChart(activeChart) && backtestResults?.mes_reg5_long_tail_details) {
       backtestResults.mes_reg5_long_tail_details.forEach(({ barIndex, timestamp, action, metrics }) => {
         merged.push({
           timestamp,
@@ -970,7 +1261,7 @@ export default function App() {
       });
     }
 
-    if (showMesReg5EmaBounceAritySignals && ['MESM_reg_5', 'MES_8pt', 'MES_3pt'].includes(activeChart) && backtestResults?.mes_reg5_ema_bounce_arity_details) {
+    if (showMesReg5EmaBounceAritySignals && isMesRangeCampaignChart(activeChart) && backtestResults?.mes_reg5_ema_bounce_arity_details) {
       backtestResults.mes_reg5_ema_bounce_arity_details.forEach(({ barIndex, timestamp, action, metrics }) => {
         merged.push({
           timestamp,
@@ -982,6 +1273,25 @@ export default function App() {
           metrics,
           comment: 'MES Reg5 EMA Bounce with Arity',
           evaluationResult: 'Study',
+        });
+      });
+    }
+
+    if (showMesReg5PinBarBreakoutSignals && isMesRangeCampaignChart(activeChart) && backtestResults?.mes_reg5_pin_bar_breakout_details) {
+      backtestResults.mes_reg5_pin_bar_breakout_details.forEach(({ barIndex, timestamp, action, metrics }) => {
+        const evaluation = backtestResults.mes_reg5_pin_bar_breakout_evaluations?.find(
+          ev => ev.barIndex === barIndex && ev.direction === action
+        );
+        merged.push({
+          timestamp,
+          barIndex,
+          action,
+          isSystem: true,
+          signalSet: 9,
+          setupType: 'mesReg5PinBarBreakout',
+          metrics,
+          comment: 'MES Reg5 Pin Bar Breakout',
+          evaluationResult: evaluation ? evaluation.result : 'Study',
         });
       });
     }
@@ -1055,7 +1365,7 @@ export default function App() {
     }
     
     return merged;
-  }, [filteredManualAnnotations, backtestResults, showTrainingAnnotations, showRawSignals, showSignalSet2, showSignalSet3, showMes3TrendTailSignals, showMes3PreviousTailSignals, showMes3HaEmaApproachSignals, showMesReg5LongTailSignals, showMesReg5EmaBounceAritySignals, showCampaignTrades, campaignView, activeChart, modalOpen]);
+  }, [filteredTrainingAnnotations, tailArrowAnnotations, backtestResults, showTrainingAnnotations, showRawSignals, showSignalSet2, showSignalSet3, showMes3TrendTailSignals, showMes3PreviousTailSignals, showMes3HaEmaApproachSignals, showMesReg5LongTailSignals, showMesReg5EmaBounceAritySignals, showMesReg5PinBarBreakoutSignals, showCampaignTrades, campaignView, activeChart, modalOpen]);
 
   // Compute performance and alignment stats
   const stats = React.useMemo(() => {
@@ -1139,44 +1449,100 @@ export default function App() {
           </div>
           {charts.length === 0 ? (
             <div style={{ fontSize: '13px', color: 'var(--text-muted)', textAlign: 'center', padding: '12px' }}>
-              No charts imported yet.<br/>Export from MultiCharts to get started.
+              No datasets yet.<br/>Import an export below to get started.
             </div>
           ) : (
             <div className="file-list">
-              {charts.map(c => (
-                <div
-                  key={c}
-                  className={`file-item ${activeChart === c ? 'active' : ''}`}
-                  onClick={() => {
-                    setActiveChart(c);
-                    setDatasetsDrawerOpen(false);
-                  }}
-                >
-                  <span className="file-name">{c}</span>
-                  <span className="file-meta">
-                    {(allAnnotations[c] || []).length} annotations
-                  </span>
-                </div>
-              ))}
+              {charts.map(c => {
+                const isRenaming = renamingChart === c;
+                return (
+                  <div
+                    key={c}
+                    className={`file-item ${activeChart === c ? 'active' : ''}`}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setDatasetContextMenu({ x: event.clientX, y: event.clientY, chartName: c });
+                    }}
+                    onClick={() => {
+                      if (isRenaming) return; // don't select/switch while editing the name
+                      setActiveChart(c);
+                      setDatasetsDrawerOpen(false);
+                    }}
+                  >
+                    <div className="file-item-row">
+                      <div className="file-item-content">
+                        {isRenaming ? (
+                          <input
+                            type="text"
+                            className="file-name-input"
+                            value={renameValue}
+                            autoFocus
+                            disabled={renamingSubmitting}
+                            onClick={(event) => event.stopPropagation()}
+                            onChange={(event) => setRenameValue(event.target.value)}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.preventDefault();
+                                handleRenameDataset(c, renameValue);
+                              } else if (event.key === 'Escape') {
+                                event.preventDefault();
+                                setRenamingChart('');
+                                setRenameValue('');
+                              }
+                            }}
+                            onBlur={() => {
+                              if (!renamingSubmitting) {
+                                setRenamingChart('');
+                                setRenameValue('');
+                              }
+                            }}
+                          />
+                        ) : (
+                          <>
+                            <span className="file-name">{c}</span>
+                            <span className="file-meta">
+                              {(allAnnotations[c] || []).length} annotations
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
 
-        {/* Dynamic Help Widget */}
-        <div className="upload-zone">
-          <div className="upload-icon">⚡</div>
-          <h4 style={{ fontSize: '13px', fontWeight: '600', marginBottom: '4px' }}>AI-Driven Ingestion</h4>
-          <p className="upload-text" style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: '1.4' }}>
-            Export data in MultiCharts to:<br/>
-            <code>C:\MultiChartsExports\</code><br/>
-            Then ask Antigravity in the chat:<br/>
-            <strong style={{ color: 'var(--primary)', display: 'block', marginTop: '4px' }}>
-              "Import export.json as MNQ_15pt"
-            </strong>
+        <div className="dataset-import-panel">
+          <input
+            ref={importFileInputRef}
+            type="file"
+            className="dataset-file-input"
+            onChange={handleMultichartsFileChosen}
+          />
+          <button
+            type="button"
+            className="btn btn-primary dataset-import-button"
+            disabled={importingDataset}
+            onClick={() => importFileInputRef.current?.click()}
+          >
+            {importingDataset ? 'Importing...' : 'Choose MultiCharts Export'}
+          </button>
+          <p className="dataset-help-text">
+            Opens a file chooser. Go to <code>C:\MultiChartsExports</code> and pick any export file.
           </p>
+
+          {datasetActionStatus && (
+            <p className="dataset-status dataset-status-success">{datasetActionStatus}</p>
+          )}
+          {datasetActionError && (
+            <p className="dataset-status dataset-status-error">{datasetActionError}</p>
+          )}
         </div>
 
-        {/* Strategy & Alignment Card */}
+        {/* Strategy & Alignment Card - only when chart loaded */}
         {chartData.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {/* Strategy Configuration Card */}
@@ -1581,14 +1947,16 @@ export default function App() {
                       onChange={(e) => setShowTrainingAnnotations(e.target.checked)}
                       style={{ accentColor: '#22c55e', cursor: 'pointer', width: '16px', height: '16px' }}
                     />
-                    Training Annotations ({currentAnnotations.length})
+                    Training Annotations ({trainingAnnotationCount})
                   </label>
                   
                   {/* Indented checklist for individual Marker Sets */}
                   {showTrainingAnnotations && availableMarkerSets.length > 0 && (
                     <div style={{ paddingLeft: '20px', display: 'flex', flexDirection: 'column', gap: '5px', marginTop: '2px', borderLeft: '1px dashed var(--border-color)', marginLeft: '7px' }}>
                       {availableMarkerSets.map(set => {
-                        const count = savedAnnotations.filter(ann => (ann.markerSet || defaultMarkerSetForChart(activeChart)) === set).length;
+                        const count = savedAnnotations.filter(
+                          ann => !isTailArrowAnnotation(ann) && (ann.markerSet || defaultMarkerSetForChart(activeChart)) === set
+                        ).length;
                         const isChecked = visibleMarkerSets[set] !== false;
                         return (
                           <label key={set} style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '11px', fontWeight: '500', userSelect: 'none' }}>
@@ -1666,7 +2034,7 @@ export default function App() {
                         />
                         HA 10 EMA Reclaim Tail Setup ({backtestResults?.mes3_ha_ema_approach_details?.length || 0})
                       </label>
-                      {['MESM_reg_5', 'MES_8pt', 'MES_3pt'].includes(activeChart) && (
+                      {isMesRangeCampaignChart(activeChart) && (
                         <>
                           <label htmlFor="showMesReg5LongTailSignals" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '12px', fontWeight: '500', userSelect: 'none' }}>
                             <input
@@ -1687,6 +2055,16 @@ export default function App() {
                               style={{ accentColor: '#10b981', cursor: 'pointer', width: '16px', height: '16px' }}
                             />
                             MES Reg5 EMA Bounce Arity ({backtestResults?.mes_reg5_ema_bounce_arity_details?.length || 0})
+                          </label>
+                          <label htmlFor="showMesReg5PinBarBreakoutSignals" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '12px', fontWeight: '500', userSelect: 'none' }}>
+                            <input
+                              type="checkbox"
+                              id="showMesReg5PinBarBreakoutSignals"
+                              checked={showMesReg5PinBarBreakoutSignals}
+                              onChange={(e) => setShowMesReg5PinBarBreakoutSignals(e.target.checked)}
+                              style={{ accentColor: '#f97316', cursor: 'pointer', width: '16px', height: '16px' }}
+                            />
+                            MES Reg5 Pin Bar Breakout ({backtestResults?.mes_reg5_pin_bar_breakout_details?.length || 0})
                           </label>
                         </>
                       )}
@@ -1917,19 +2295,24 @@ export default function App() {
                 <div style={{ color: 'var(--text-secondary)' }}>
                   Click on any {isRegularCandlestick ? 'candlestick' : 'Renko brick'} body or wick to add/edit annotations.
                 </div>
+                <div style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>
+                  Alt+click below a tail for a green up arrow; Alt+click above a tail for a red down arrow.
+                </div>
               </div>
               <button
                 type="button"
                 className="annotations-drawer-button"
                 onClick={() => setAnnotationsDrawerOpen(true)}
               >
-                Annotations ({currentAnnotations.length})
+                Annotations ({trainingAnnotationCount + tailArrowAnnotations.length})
               </button>
               <ChartComponent
                 data={chartData}
                 secondaryData={(activeChart === 'MES3' || activeChart === 'MESM_reg_5') ? secondaryChartData : []}
                 annotations={mergedAnnotations}
                 onBrickClick={handleBrickClick}
+                onAddTailArrowAnnotation={handleAddTailArrowAnnotation}
+                onClearTailArrowAnnotations={handleClearTailArrowAnnotations}
                 onHaSelectionChange={handleHaSelectionChange}
                 bookmark={bookmark}
                 onSetBookmark={handleBookmarkBrick}
@@ -1949,6 +2332,36 @@ export default function App() {
         </div>
 
       </main>
+
+      {datasetContextMenu && (
+        <div
+          className="chart-context-menu"
+          style={{ left: datasetContextMenu.x, top: datasetContextMenu.y }}
+          onClick={event => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              const chartName = datasetContextMenu.chartName;
+              setDatasetContextMenu(null);
+              // Reuse the existing delete flow; it takes a synthetic event-like arg.
+              handleDeleteDataset(chartName, { stopPropagation() {} });
+            }}
+          >
+            Delete
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setRenameValue(datasetContextMenu.chartName);
+              setRenamingChart(datasetContextMenu.chartName);
+              setDatasetContextMenu(null);
+            }}
+          >
+            Rename
+          </button>
+        </div>
+      )}
 
       {annotationsDrawerOpen && (
         <div className="annotations-drawer-backdrop" onClick={() => setAnnotationsDrawerOpen(false)}>
@@ -2018,8 +2431,8 @@ export default function App() {
                           </span>
                         </td>
                         <td>
-                          <span className={`badge ${ann.action.toLowerCase()}`}>
-                            {ann.action.toUpperCase()}
+                          <span className={`badge ${ann.tailArrow === 'up' ? 'buy' : ann.tailArrow === 'down' ? 'sell' : ann.action?.toLowerCase()}`}>
+                            {ann.tailArrow === 'up' ? '↑ TAIL' : ann.tailArrow === 'down' ? '↓ TAIL' : ann.action?.toUpperCase()}
                           </span>
                         </td>
                         <td>{ann.metrics?.open?.toFixed(2)}</td>
@@ -2132,7 +2545,7 @@ export default function App() {
                 <span className="stat-value">{selectedBrick.close.toFixed(2)}</span>
               </div>
               <div className="stat-item">
-                <span className="stat-label">{activeChart?.includes('8pt') || activeChart?.includes('3pt') ? '9 EMA' : '5 EMA'}</span>
+                <span className="stat-label">{isNineEmaChart(activeChart) ? '9 EMA' : '5 EMA'}</span>
                 <span className="stat-value" style={{ color: 'var(--primary)' }}>
                   {(selectedBrick.ema5 ?? selectedBrick.ema) ? (selectedBrick.ema5 ?? selectedBrick.ema).toFixed(4) : 'N/A'}
                 </span>
