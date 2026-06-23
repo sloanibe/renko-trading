@@ -806,19 +806,6 @@
   ],
   "MESM_reg_5": [
     {
-      "timestamp": "2026-05-07T06:32:47",
-      "barIndex": 650,
-      "markerSet": "Tail Arrows",
-      "tailArrow": "down",
-      "metrics": {
-        "open": 7394.5,
-        "high": 7395.5,
-        "low": 7394.25,
-        "close": 7394.25,
-        "ema": 7395.8642
-      }
-    },
-    {
       "timestamp": "2026-05-07T06:34:49",
       "barIndex": 653,
       "action": "Sell",
@@ -872,19 +859,6 @@
         "low": 7386,
         "close": 7386,
         "ema": 7387.491
-      }
-    },
-    {
-      "timestamp": "2026-05-07T07:04:38",
-      "barIndex": 766,
-      "markerSet": "Tail Arrows",
-      "tailArrow": "up",
-      "metrics": {
-        "open": 7392.75,
-        "high": 7392.75,
-        "low": 7391.5,
-        "close": 7392.75,
-        "ema": 7391.1501
       }
     },
     {
@@ -1277,6 +1251,19 @@
         "low": 7523.25,
         "close": 7523.25,
         "ema": 7524.9282
+      }
+    },
+    {
+      "timestamp": "2026-06-17T06:56:28",
+      "barIndex": 113612,
+      "markerSet": "Tail Arrows",
+      "tailArrow": "up",
+      "metrics": {
+        "open": 7523,
+        "high": 7523.5,
+        "low": 7522.25,
+        "close": 7523.5,
+        "ema": 7524.6108
       }
     },
     {
@@ -1742,29 +1729,16 @@
       }
     },
     {
-      "timestamp": "2026-06-17T08:38:23",
-      "barIndex": 114464,
-      "markerSet": "Tail Arrows",
-      "tailArrow": "down",
-      "metrics": {
-        "open": 7518,
-        "high": 7518.75,
-        "low": 7517.5,
-        "close": 7518.75,
-        "ema": 7518.1666
-      }
-    },
-    {
-      "timestamp": "2026-06-17T08:42:13",
-      "barIndex": 114475,
+      "timestamp": "2026-06-17T08:49:20",
+      "barIndex": 114498,
       "markerSet": "Tail Arrows",
       "tailArrow": "up",
       "metrics": {
-        "open": 7516.75,
-        "high": 7517.75,
-        "low": 7516.5,
-        "close": 7517.75,
-        "ema": 7517.8412
+        "open": 7520,
+        "high": 7520,
+        "low": 7518.75,
+        "close": 7520,
+        "ema": 7518.786
       }
     }
   ],

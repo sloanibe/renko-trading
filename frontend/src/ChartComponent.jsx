@@ -635,8 +635,8 @@ class RenkoOverlayRenderer {
 }
 
 class SessionDividerPrimitive {
-  constructor(times, options = {}) {
-    this._times = times;
+  constructor(sessions, options = {}) {
+    this._sessions = sessions;
     this._options = options;
     this._chart = null;
     this._paneViews = [new SessionDividerPaneView(this)];
@@ -662,8 +662,8 @@ class SessionDividerPrimitive {
     return this._chart;
   }
 
-  get times() {
-    return this._times;
+  get sessions() {
+    return this._sessions;
   }
 
   get options() {
@@ -699,11 +699,23 @@ class SessionDividerRenderer {
     const chart = this._primitive.chart;
     const timeScale = chart?.timeScale();
     const options = this._primitive.options;
-    if (!timeScale) return;
+    const sessions = this._primitive.sessions;
+    if (!timeScale || !sessions?.length) return;
 
-    const positions = this._primitive.times
-      .map(time => timeScale.timeToCoordinate(time))
-      .filter(position => position !== null);
+    const visibleRange = timeScale.getVisibleLogicalRange();
+    const firstVisibleIndex = visibleRange
+      ? Math.max(0, Math.floor(visibleRange.from) - 1)
+      : 0;
+    const lastVisibleIndex = visibleRange
+      ? Math.ceil(visibleRange.to) + 1
+      : Number.POSITIVE_INFINITY;
+
+    const positions = [];
+    for (const session of sessions) {
+      if (session.barIndex < firstVisibleIndex || session.barIndex > lastVisibleIndex) continue;
+      const position = timeScale.timeToCoordinate(session.time);
+      if (position !== null) positions.push(position);
+    }
     if (positions.length === 0) return;
 
     target.useBitmapCoordinateSpace((scope) => {
@@ -1065,6 +1077,7 @@ export default function ChartComponent({
   const pendingSliderRangeRef = useRef(null);
   const sliderSyncRafRef = useRef(null);
   const lockedRenkoPriceRef = useRef(null);
+  const isRenkoPriceInteractionRef = useRef(false);
   const primaryFormattedDataRef = useRef([]);
   const secondaryFormattedDataRef = useRef([]);
   const primaryBarByChartTimeRef = useRef(new Map());
@@ -1859,7 +1872,10 @@ export default function ChartComponent({
     }));
     candlestickSeries.setData(candleData);
 
-    const sessionOpenTimes = getSessionOpenIndices(data).map(index => formattedData[index].time);
+    const sessionOpens = getSessionOpenIndices(data).map(index => ({
+      barIndex: index,
+      time: formattedData[index].time,
+    }));
 
     // Attach custom bold wicks and 15pt grid overlay primitive (only for Renko charts)
     if (!isRegularCandlestick) {
@@ -1876,7 +1892,7 @@ export default function ChartComponent({
       candlestickSeries.attachPrimitive(renkoOverlay);
       renkoOverlayRef.current = renkoOverlay;
     }
-    candlestickSeries.attachPrimitive(new SessionDividerPrimitive(sessionOpenTimes, {
+    candlestickSeries.attachPrimitive(new SessionDividerPrimitive(sessionOpens, {
       color: '#363636',
       lineWidth: 2,
     }));
@@ -1930,6 +1946,27 @@ export default function ChartComponent({
     } else {
       chart.timeScale().fitContent();
     }
+
+    if (!isRegularCandlestick && lockedRenkoPriceRef.current) {
+      chart.priceScale('right').setVisibleRange(lockedRenkoPriceRef.current);
+      requestAnimationFrame(() => {
+        if (lockedRenkoPriceRef.current) {
+          chart.priceScale('right').setVisibleRange(lockedRenkoPriceRef.current);
+        }
+      });
+    }
+
+    let isRangeHandlerAttached = true;
+    const detachVisibleRangeHandler = () => {
+      if (!isRangeHandlerAttached) return;
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
+      isRangeHandlerAttached = false;
+    };
+    const attachVisibleRangeHandler = () => {
+      if (isRangeHandlerAttached) return;
+      chart.timeScale().subscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
+      isRangeHandlerAttached = true;
+    };
 
     // Sync slider with chart scroll (batched; skipped while actively dragging)
     const applySliderSync = (logicalRange) => {
@@ -2055,27 +2092,29 @@ export default function ChartComponent({
       }
 
       if (event.button === 0) {
-        isPrimaryDraggingRef.current = true;
-        startLongPressSync('primary', event);
+        const rect = chartContainerRef.current.getBoundingClientRect();
+        const priceScaleWidth = chart.priceScale('right').width();
+        const isPriceScaleHit = priceScaleWidth > 0 && event.clientX >= rect.right - priceScaleWidth;
+        if (!isRegularCandlestick && isPriceScaleHit) {
+          isRenkoPriceInteractionRef.current = true;
+        } else {
+          isPrimaryDraggingRef.current = true;
+          detachVisibleRangeHandler();
+        }
       }
     };
     const handlePrimaryMouseUp = () => {
       cancelLongPressSync();
-      if (!isRegularCandlestick && chart) {
+      if (!isRegularCandlestick && chart && isRenkoPriceInteractionRef.current) {
         const range = chart.priceScale('right').getVisibleRange();
-        const locked = lockedRenkoPriceRef.current;
-        if (range && locked) {
-          if (isPrimaryDraggingRef.current) {
-            if (Math.abs(range.from - locked.from) > 0.001 || Math.abs(range.to - locked.to) > 0.001) {
-              chart.priceScale('right').setVisibleRange(locked);
-            }
-          } else {
-            lockedRenkoPriceRef.current = { from: range.from, to: range.to };
-          }
+        if (range) {
+          lockedRenkoPriceRef.current = { from: range.from, to: range.to };
         }
       }
+      isRenkoPriceInteractionRef.current = false;
       if (isPrimaryDraggingRef.current) {
         isPrimaryDraggingRef.current = false;
+        attachVisibleRangeHandler();
         flushSliderSync();
       }
     };
@@ -2147,7 +2186,7 @@ export default function ChartComponent({
       primaryFormattedDataRef.current = [];
       primaryBarByChartTimeRef.current = new Map();
     };
-  }, [data, formattedData, originalTimeByChartTime]);
+  }, [data, formattedData, originalTimeByChartTime, isRegularCandlestick]);
 
   useEffect(() => {
     if (!secondaryChartContainerRef.current || !secondaryData || secondaryData.length === 0 || !hasSecondaryPane) {
