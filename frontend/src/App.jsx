@@ -10,6 +10,22 @@ const isTailArrowAnnotation = annotation =>
   annotation?.tailArrow === 'up' ||
   annotation?.tailArrow === 'down' ||
   annotation?.markerSet === TAIL_ARROWS_MARKER_SET;
+
+/** Regular range bars vs Renko: name hints + body-size diversity in loaded data. */
+const isRegularCandlestickChart = (chartName, bars) => {
+  const name = (chartName || '').toLowerCase();
+  if (name.includes('renko')) return false;
+  if (name.includes('reg')) return true;
+  if (bars?.length) {
+    const sample = bars.slice(0, Math.min(500, bars.length));
+    const bodySizes = new Set(
+      sample.map(b => Math.round(Math.abs(b.close - b.open) * 100) / 100),
+    );
+    return bodySizes.size > 2;
+  }
+  if (name.includes('new') && /\d+pt/.test(name)) return true;
+  return false;
+};
 const CAMPAIGN_OPTIONS = {
   yellowMomentum: {
     label: 'Yellow Momentum 1:1',
@@ -76,10 +92,13 @@ export default function App() {
   const savedMarkerSettings = React.useMemo(loadMarkerSettings, []);
   const [charts, setCharts] = useState([]);
   const [activeChart, setActiveChart] = useState('');
-  const isRegularCandlestick = activeChart?.toLowerCase().includes('reg');
   const [chartData, setChartData] = useState([]);
+  const isRegularCandlestick = React.useMemo(
+    () => isRegularCandlestickChart(activeChart, chartData),
+    [activeChart, chartData],
+  );
   const [secondaryChartData, setSecondaryChartData] = useState([]);
-  const [showSecondaryPane, setShowSecondaryPane] = useState(savedMarkerSettings.showSecondaryPane ?? true);
+  const [showSecondaryPane, setShowSecondaryPane] = useState(savedMarkerSettings.showSecondaryPane ?? false);
   const [currentHaSelection, setCurrentHaSelection] = useState(null);
   const [allAnnotations, setAllAnnotations] = useState({});
   const [selectedBrick, setSelectedBrick] = useState(null);
@@ -406,14 +425,8 @@ export default function App() {
   // Fetch chart data and backtest when active selection changes or when configuration is adjusted
   useEffect(() => {
     if (activeChart) {
+      setChartData([]);
       fetchChartData(activeChart);
-      if (activeChart === 'MES3' || activeChart === 'MESM_reg_5') {
-        fetchSecondaryChartData('MES_2sec_HA');
-      } else {
-        setSecondaryChartData([]);
-        setCurrentHaSelection(null);
-      }
-      // Keep user's saved showSecondaryPane setting
       fetchBacktest(activeChart);
       const savedBookmark = localStorage.getItem(bookmarkStorageKey(activeChart));
       try {
@@ -459,6 +472,18 @@ export default function App() {
     yellowMaxOverlap,
     yellowMaxReversals,
   ]);
+
+  const supportsHaPane = activeChart === 'MES3' || activeChart === 'MESM_reg_5';
+
+  // Load the 81k+ bar HA dataset only when the pane is actually shown (avoids a second chart instance while panning Renko)
+  useEffect(() => {
+    if (!supportsHaPane || !showSecondaryPane) {
+      setSecondaryChartData([]);
+      setCurrentHaSelection(null);
+      return;
+    }
+    fetchSecondaryChartData('MES_2sec_HA');
+  }, [activeChart, showSecondaryPane, supportsHaPane]);
 
   const fetchCharts = async () => {
     try {
@@ -2076,7 +2101,7 @@ export default function App() {
                           onChange={(e) => setShowSecondaryPane(e.target.checked)}
                           style={{ accentColor: 'var(--primary)', cursor: 'pointer', width: '16px', height: '16px' }}
                         />
-                        Show Heiken Ashi Pane
+                        Show Heiken Ashi Pane (loads ~80k 2s bars; hide for faster scrolling)
                       </label>
                     </>
                   )}
@@ -2284,7 +2309,7 @@ export default function App() {
                   <span>Local Engine Active</span>
                 </div>
                 <div>{isRegularCandlestick ? 'Bars' : 'Bricks'}: {chartData.length}</div>
-                {(activeChart === 'MES3' || activeChart === 'MESM_reg_5') && secondaryChartData.length > 0 && (
+                {(supportsHaPane && showSecondaryPane && secondaryChartData.length > 0) && (
                   <div>HA 2s Bars: {secondaryChartData.length}</div>
                 )}
                 {currentHaSelection && (
@@ -2308,7 +2333,7 @@ export default function App() {
               </button>
               <ChartComponent
                 data={chartData}
-                secondaryData={(activeChart === 'MES3' || activeChart === 'MESM_reg_5') ? secondaryChartData : []}
+                secondaryData={supportsHaPane && showSecondaryPane ? secondaryChartData : []}
                 annotations={mergedAnnotations}
                 onBrickClick={handleBrickClick}
                 onAddTailArrowAnnotation={handleAddTailArrowAnnotation}

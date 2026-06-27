@@ -233,6 +233,47 @@ const formatChartData = (data) => {
   return { formattedData, originalTimeByChartTime, barIndexByChartTime };
 };
 
+const normalizeVisibleLogicalRange = (logicalRange, totalBars) => {
+  if (!logicalRange || totalBars <= 0) return null;
+
+  let from = Number.isFinite(logicalRange.from) ? logicalRange.from : 0;
+  let to = Number.isFinite(logicalRange.to) ? logicalRange.to : from + 1;
+  if (to < from) {
+    [from, to] = [to, from];
+  }
+
+  const width = Math.min(totalBars, Math.max(1, to - from));
+  const maxFrom = Math.max(0, totalBars - width);
+  from = Math.max(0, Math.min(maxFrom, from));
+  to = from + width;
+
+  return { from, to, width };
+};
+
+/** Read the range actually painted on screen; getVisibleLogicalRange() can lag after panning. */
+const readVisibleLogicalRangeFromChart = (chart, containerEl, totalBars) => {
+  if (!chart || !containerEl || totalBars <= 0) {
+    return chart?.timeScale().getVisibleLogicalRange() ?? null;
+  }
+
+  const timeScale = chart.timeScale();
+  const priceScaleWidth = chart.priceScale('right').width();
+  const plotWidth = Math.max(1, containerEl.clientWidth - priceScaleWidth);
+  const leftLogical = timeScale.coordinateToLogical(0);
+  const rightLogical = timeScale.coordinateToLogical(plotWidth);
+
+  if (leftLogical !== null && rightLogical !== null) {
+    const from = Math.min(leftLogical, rightLogical);
+    const to = Math.max(leftLogical, rightLogical);
+    const normalized = normalizeVisibleLogicalRange({ from, to }, totalBars);
+    if (normalized) {
+      return { from: normalized.from, to: normalized.to };
+    }
+  }
+
+  return timeScale.getVisibleLogicalRange();
+};
+
 const getOriginalDateForChartTime = (chartTime, originalTimeByChartTime) => {
   const originalTime = originalTimeByChartTime.get(chartTime);
   if (!originalTime) return new Date(chartTime * 1000);
@@ -301,6 +342,7 @@ class RenkoOverlayPrimitive {
     this._chart = null;
     this._series = null;
     this._requestUpdate = null;
+    this._paneViews = [new RenkoOverlayPaneView(this)];
 
     this._minPrice = Infinity;
     this._maxPrice = -Infinity;
@@ -366,7 +408,7 @@ class RenkoOverlayPrimitive {
   }
 
   paneViews() {
-    return [new RenkoOverlayPaneView(this)];
+    return this._paneViews;
   }
 }
 
@@ -747,6 +789,7 @@ class TailArrowMarkerPrimitive {
     this._chart = null;
     this._series = null;
     this._requestUpdate = null;
+    this._paneViews = [new TailArrowMarkerPaneView(this)];
   }
 
   attached(param) {
@@ -768,12 +811,16 @@ class TailArrowMarkerPrimitive {
   }
 
   updateMarkers(markers) {
-    this._markers = markers || [];
+    this._markers = [...(markers || [])].sort((a, b) => {
+      const aIndex = Number.isInteger(a.barIndex) ? a.barIndex : Number.POSITIVE_INFINITY;
+      const bIndex = Number.isInteger(b.barIndex) ? b.barIndex : Number.POSITIVE_INFINITY;
+      return aIndex - bIndex;
+    });
     if (this._requestUpdate) this._requestUpdate();
   }
 
   paneViews() {
-    return [new TailArrowMarkerPaneView(this)];
+    return this._paneViews;
   }
 }
 
@@ -827,16 +874,19 @@ class TailArrowMarkerRenderer {
       const strokeColor = options.strokeColor || '#111111';
       const lineWidth = 1.5 * Math.min(hRatio, vRatio);
 
-      markers.forEach((marker) => {
-        if (marker.barIndex < firstVisibleIndex || marker.barIndex > lastVisibleIndex) return;
+      for (const marker of markers) {
+        if (Number.isInteger(marker.barIndex)) {
+          if (marker.barIndex < firstVisibleIndex) continue;
+          if (marker.barIndex > lastVisibleIndex) break;
+        }
 
         const bar = dataByTime.get(marker.time) || data[marker.barIndex];
-        if (!bar) return;
+        if (!bar) continue;
 
         const xCoordinate = chart.timeScale().timeToCoordinate(bar.time);
         const highY = series.priceToCoordinate(bar.high);
         const lowY = series.priceToCoordinate(bar.low);
-        if (xCoordinate === null || highY === null || lowY === null) return;
+        if (xCoordinate === null || highY === null || lowY === null) continue;
 
         const x = xCoordinate * hRatio;
         ctx.lineWidth = lineWidth;
@@ -853,7 +903,7 @@ class TailArrowMarkerRenderer {
           ctx.closePath();
           ctx.fill();
           ctx.stroke();
-          return;
+          continue;
         }
 
         const baseY = highY * vRatio - offset;
@@ -866,7 +916,7 @@ class TailArrowMarkerRenderer {
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
-      });
+      }
     });
   }
 }
@@ -880,6 +930,7 @@ class CampaignExitMarkerPrimitive {
     this._chart = null;
     this._series = null;
     this._requestUpdate = null;
+    this._paneViews = [new CampaignExitMarkerPaneView(this)];
   }
 
   attached(param) {
@@ -901,12 +952,16 @@ class CampaignExitMarkerPrimitive {
   }
 
   updateMarkers(markers) {
-    this._markers = markers || [];
+    this._markers = [...(markers || [])].sort((a, b) => {
+      const aIndex = Number.isInteger(a.barIndex) ? a.barIndex : Number.POSITIVE_INFINITY;
+      const bIndex = Number.isInteger(b.barIndex) ? b.barIndex : Number.POSITIVE_INFINITY;
+      return aIndex - bIndex;
+    });
     if (this._requestUpdate) this._requestUpdate();
   }
 
   paneViews() {
-    return [new CampaignExitMarkerPaneView(this)];
+    return this._paneViews;
   }
 }
 
@@ -966,16 +1021,19 @@ class CampaignExitMarkerRenderer {
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
 
-      markers.forEach((marker) => {
-        if (marker.barIndex < firstVisibleIndex || marker.barIndex > lastVisibleIndex) return;
+      for (const marker of markers) {
+        if (Number.isInteger(marker.barIndex)) {
+          if (marker.barIndex < firstVisibleIndex) continue;
+          if (marker.barIndex > lastVisibleIndex) break;
+        }
 
         const bar = dataByTime.get(marker.time) || data[marker.barIndex];
-        if (!bar) return;
+        if (!bar) continue;
 
         const xCoordinate = chart.timeScale().timeToCoordinate(bar.time);
         const highY = series.priceToCoordinate(bar.high);
         const lowY = series.priceToCoordinate(bar.low);
-        if (xCoordinate === null || highY === null || lowY === null) return;
+        if (xCoordinate === null || highY === null || lowY === null) continue;
 
         const isBuyExit = marker.direction === 'Buy';
         const x = xCoordinate * hRatio;
@@ -1033,7 +1091,7 @@ class CampaignExitMarkerRenderer {
           ctx.font = `800 ${13 * vRatio}px Inter, system-ui, sans-serif`;
           ctx.fillText(marker.text, x, boxCenterY + 0.5 * vRatio);
         }
-      });
+      }
     });
   }
 }
@@ -1076,6 +1134,11 @@ export default function ChartComponent({
   const isPrimaryDraggingRef = useRef(false);
   const pendingSliderRangeRef = useRef(null);
   const sliderSyncRafRef = useRef(null);
+  const lastSliderSyncRef = useRef({ center: 0, width: 150 });
+  const isUpdatingSliderRef = useRef(false);
+  const visibleRangeHandlerRef = useRef(null);
+  const isRangeHandlerDetachedRef = useRef(false);
+  const dragSliderSyncRafRef = useRef(null);
   const lockedRenkoPriceRef = useRef(null);
   const isRenkoPriceInteractionRef = useRef(false);
   const primaryFormattedDataRef = useRef([]);
@@ -1139,16 +1202,20 @@ export default function ChartComponent({
 
   // Button & Slider Handlers
   const handleSliderInput = (e) => {
+    if (isUpdatingSliderRef.current) return;
     const chart = chartRef.current;
     if (!chart || !data) return;
     
-    const start = parseFloat(e.target.value);
+    const center = parseFloat(e.target.value);
     const logicalRange = chart.timeScale().getVisibleLogicalRange();
     if (logicalRange) {
       const width = logicalRange.to - logicalRange.from;
+      const safeWidth = Math.max(1, Math.min(width, data.length || 1));
+      const maxFrom = Math.max(0, data.length - safeWidth);
+      const from = Math.max(0, Math.min(maxFrom, center - safeWidth / 2));
       chart.timeScale().setVisibleLogicalRange({
-        from: start,
-        to: start + width,
+        from,
+        to: from + safeWidth,
       });
     }
   };
@@ -1241,6 +1308,7 @@ export default function ChartComponent({
       from,
       to: from + safeWidth,
     });
+    crosshairBarIndexRef.current = barIndex;
   };
 
   const handleGoToBookmark = () => {
@@ -1752,7 +1820,7 @@ export default function ChartComponent({
       },
       rightPriceScale: {
         borderColor: 'rgba(0, 0, 0, 0.15)',
-        autoScale: true,
+        autoScale: isRegularCandlestick,
         scaleMargins: {
           top: 0.15,
           bottom: 0.15,
@@ -1762,6 +1830,8 @@ export default function ChartComponent({
         borderColor: 'rgba(0, 0, 0, 0.15)',
         timeVisible: true,
         secondsVisible: true,
+        fixLeftEdge: true,
+        fixRightEdge: true,
         barSpacing: 18, // Zoom in by default to make wicks and bars visually thicker
         tickMarkFormatter: (time, tickMarkType) => {
           const date = getOriginalDateForChartTime(time, originalTimeByChartTime);
@@ -1826,11 +1896,15 @@ export default function ChartComponent({
       wickVisible: true,
       wickUpColor: '#000000',
       wickDownColor: '#000000',
+      priceLineVisible: false,
+      lastValueVisible: false,
     } : {
       upColor: 'rgba(0, 0, 0, 0)',
       downColor: 'rgba(0, 0, 0, 0)',
       borderVisible: false,
       wickVisible: false,      // Hide default 1px wicks (our custom primitive draws thick wicks)
+      priceLineVisible: false,
+      lastValueVisible: false,
       autoscaleInfoProvider: () => {
         const range = lockedRenkoPriceRef.current;
         if (!range) return null;
@@ -1850,6 +1924,7 @@ export default function ChartComponent({
       color: '#ffd400',
       lineWidth: 2,
       priceLineVisible: false,
+      lastValueVisible: false,
       autoscaleInfoProvider: () => null,
     });
     ema5SeriesRef.current = ema5Series;
@@ -1858,6 +1933,7 @@ export default function ChartComponent({
       color: '#008000',
       lineWidth: 2,
       priceLineVisible: false,
+      lastValueVisible: false,
       autoscaleInfoProvider: () => null,
     });
     ema10SeriesRef.current = ema10Series;
@@ -1956,32 +2032,56 @@ export default function ChartComponent({
       });
     }
 
-    let isRangeHandlerAttached = true;
     const detachVisibleRangeHandler = () => {
-      if (!isRangeHandlerAttached) return;
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
-      isRangeHandlerAttached = false;
-    };
-    const attachVisibleRangeHandler = () => {
-      if (isRangeHandlerAttached) return;
-      chart.timeScale().subscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
-      isRangeHandlerAttached = true;
+      if (!isRangeHandlerDetachedRef.current && visibleRangeHandlerRef.current) {
+        chart.timeScale().unsubscribeVisibleLogicalRangeChange(visibleRangeHandlerRef.current);
+        isRangeHandlerDetachedRef.current = true;
+      }
     };
 
-    // Sync slider with chart scroll (batched; skipped while actively dragging)
+    const attachVisibleRangeHandler = () => {
+      if (isRangeHandlerDetachedRef.current && visibleRangeHandlerRef.current) {
+        chart.timeScale().subscribeVisibleLogicalRangeChange(visibleRangeHandlerRef.current);
+        isRangeHandlerDetachedRef.current = false;
+      }
+    };
+
+    // Sync the timeline slider from the chart's actual visible range.
     const applySliderSync = (logicalRange) => {
-      const from = logicalRange.from;
-      const to = logicalRange.to;
-      const width = to - from;
-      if (sliderRef.current) {
-        const maxVal = Math.max(0, formattedData.length - width);
-        sliderRef.current.max = maxVal;
-        sliderRef.current.value = Math.min(maxVal, Math.max(0, from));
+      const totalBars = formattedData.length;
+      const normalized = normalizeVisibleLogicalRange(logicalRange, totalBars);
+      if (!normalized) return;
+
+      const { from, to, width } = normalized;
+      const center = from + width / 2;
+      const prev = lastSliderSyncRef.current;
+
+      // Ignore spurious full-range reports while panning a narrow viewport (left-edge elastic bounce).
+      if (
+        isPrimaryDraggingRef.current &&
+        prev.width < totalBars * 0.25 &&
+        width > prev.width * 3 &&
+        width > totalBars * 0.5
+      ) {
+        return;
       }
 
-      if (formattedData.length > 0) {
-        const fromIdx = Math.min(formattedData.length - 1, Math.max(0, Math.floor(from)));
-        const toIdx = Math.min(formattedData.length - 1, Math.max(0, Math.floor(to - 1)));
+      lastSliderSyncRef.current = { center, width };
+
+      if (sliderRef.current) {
+        const maxVal = Math.max(1, totalBars - 1);
+        const nextValue = Math.min(maxVal, Math.max(0, center));
+        isUpdatingSliderRef.current = true;
+        sliderRef.current.max = maxVal;
+        if (Math.abs(parseFloat(sliderRef.current.value) - nextValue) > 0.5) {
+          sliderRef.current.value = String(nextValue);
+        }
+        isUpdatingSliderRef.current = false;
+      }
+
+      if (totalBars > 0) {
+        const fromIdx = Math.min(totalBars - 1, Math.max(0, Math.floor(from)));
+        const toIdx = Math.min(totalBars - 1, Math.max(0, Math.floor(to - 1)));
         const fromBar = formattedData[fromIdx];
         const toBar = formattedData[toIdx];
 
@@ -1998,29 +2098,58 @@ export default function ChartComponent({
       if (sliderSyncRafRef.current !== null) return;
       sliderSyncRafRef.current = requestAnimationFrame(() => {
         sliderSyncRafRef.current = null;
-        if (!isPrimaryDraggingRef.current && pendingSliderRangeRef.current) {
+        if (pendingSliderRangeRef.current) {
           applySliderSync(pendingSliderRangeRef.current);
         }
       });
     };
 
-    const flushSliderSync = () => {
+    const flushSliderSync = (logicalRange) => {
       if (sliderSyncRafRef.current !== null) {
         cancelAnimationFrame(sliderSyncRafRef.current);
         sliderSyncRafRef.current = null;
       }
-      if (pendingSliderRangeRef.current) {
-        applySliderSync(pendingSliderRangeRef.current);
+      const resolvedRange = logicalRange ?? readVisibleLogicalRangeFromChart(
+        chart,
+        chartContainerRef.current,
+        formattedData.length,
+      );
+      if (resolvedRange) {
+        pendingSliderRangeRef.current = resolvedRange;
+        applySliderSync(resolvedRange);
       }
     };
 
-    const handleVisibleRangeChange = (logicalRange) => {
-      if (!logicalRange) return;
-      pendingSliderRangeRef.current = logicalRange;
-      if (isPrimaryDraggingRef.current) return;
+    const stopDragSliderSync = () => {
+      if (dragSliderSyncRafRef.current !== null) {
+        cancelAnimationFrame(dragSliderSyncRafRef.current);
+        dragSliderSyncRafRef.current = null;
+      }
+    };
+
+    const startDragSliderSync = () => {
+      stopDragSliderSync();
+      const tick = () => {
+        if (!isPrimaryDraggingRef.current) return;
+        flushSliderSync();
+        dragSliderSyncRafRef.current = requestAnimationFrame(tick);
+      };
+      dragSliderSyncRafRef.current = requestAnimationFrame(tick);
+    };
+
+    const handleVisibleRangeChangeForSlider = (logicalRange) => {
+      if (!logicalRange || isPrimaryDraggingRef.current) return;
+      pendingSliderRangeRef.current = readVisibleLogicalRangeFromChart(
+        chart,
+        chartContainerRef.current,
+        formattedData.length,
+      ) ?? logicalRange;
       scheduleSliderSync();
     };
-    chart.timeScale().subscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
+    visibleRangeHandlerRef.current = handleVisibleRangeChangeForSlider;
+    isRangeHandlerDetachedRef.current = false;
+    chart.timeScale().subscribeVisibleLogicalRangeChange(handleVisibleRangeChangeForSlider);
+    flushSliderSync();
     chart.subscribeCrosshairMove((param) => {
       if (isPrimaryDraggingRef.current) return;
       if (!param?.time) {
@@ -2100,6 +2229,7 @@ export default function ChartComponent({
         } else {
           isPrimaryDraggingRef.current = true;
           detachVisibleRangeHandler();
+          startDragSliderSync();
         }
       }
     };
@@ -2114,8 +2244,11 @@ export default function ChartComponent({
       isRenkoPriceInteractionRef.current = false;
       if (isPrimaryDraggingRef.current) {
         isPrimaryDraggingRef.current = false;
+        stopDragSliderSync();
         attachVisibleRangeHandler();
-        flushSliderSync();
+        requestAnimationFrame(() => {
+          flushSliderSync();
+        });
       }
     };
     const handlePrimaryWheel = (event) => handleVerticalWheelZoom('primary', event);
@@ -2171,7 +2304,12 @@ export default function ChartComponent({
         cancelAnimationFrame(sliderSyncRafRef.current);
         sliderSyncRafRef.current = null;
       }
-      chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
+      stopDragSliderSync();
+      if (visibleRangeHandlerRef.current) {
+        chart.timeScale().unsubscribeVisibleLogicalRangeChange(visibleRangeHandlerRef.current);
+      }
+      visibleRangeHandlerRef.current = null;
+      isRangeHandlerDetachedRef.current = false;
       chartContainerRef.current?.removeEventListener('contextmenu', handleContextMenu, true);
       chartContainerRef.current?.removeEventListener('mousedown', handlePrimaryMouseDown, true);
       chartContainerRef.current?.removeEventListener('mouseup', handlePrimaryMouseUp, true);
@@ -2186,7 +2324,7 @@ export default function ChartComponent({
       primaryFormattedDataRef.current = [];
       primaryBarByChartTimeRef.current = new Map();
     };
-  }, [data, formattedData, originalTimeByChartTime, isRegularCandlestick]);
+  }, [data, isRegularCandlestick]);
 
   useEffect(() => {
     if (!secondaryChartContainerRef.current || !secondaryData || secondaryData.length === 0 || !hasSecondaryPane) {
@@ -2246,6 +2384,8 @@ export default function ChartComponent({
         borderColor: 'rgba(0, 0, 0, 0.15)',
         timeVisible: true,
         secondsVisible: true,
+        fixLeftEdge: true,
+        fixRightEdge: true,
         barSpacing: 4,
         tickMarkFormatter: (time, tickMarkType) => {
           const date = getOriginalDateForChartTime(time, originalTimeByChartTime);
@@ -2287,6 +2427,7 @@ export default function ChartComponent({
       wickUpColor: '#000000',
       wickDownColor: '#000000',
       priceLineVisible: false,
+      lastValueVisible: false,
     });
     secondaryCandlestickSeriesRef.current = candleSeries;
     candleSeries.setData(formattedData.map(item => ({
@@ -2301,6 +2442,7 @@ export default function ChartComponent({
       color: '#ffd400',
       lineWidth: 2,
       priceLineVisible: false,
+      lastValueVisible: false,
     });
     secondaryMa1SeriesRef.current = ma1Series;
     ma1Series.setData(formattedData
@@ -2311,6 +2453,7 @@ export default function ChartComponent({
       color: '#008000',
       lineWidth: 2,
       priceLineVisible: false,
+      lastValueVisible: false,
     });
     secondaryMa2SeriesRef.current = ma2Series;
     ma2Series.setData(formattedData
@@ -2427,36 +2570,22 @@ export default function ChartComponent({
   useEffect(() => {
     if (!candlestickSeriesRef.current || !data || data.length === 0) return;
 
-    // Recalculate formatted times mapping to map database ISO times back to chart unix times
-    let lastTime = 0;
-    const formattedBars = [];
-    const timeMapping = {}; // ISO String -> Unix Timestamp (legacy fallback)
-    data.forEach((item, index) => {
-      // Append 'Z' to treat the date as UTC and match the price series timestamps
-      let t = Math.floor(Date.parse(item.time + 'Z') / 1000);
-      if (isNaN(t)) {
-        t = lastTime + 1;
-      }
-      if (t <= lastTime) {
-        t = lastTime + 1;
-      }
-      lastTime = t;
-      timeMapping[item.time] = t;
-      formattedBars.push({
-        ...item,
-        originalIndex: index,
-        chartTime: t,
-      });
+    const formattedBars = primaryFormattedDataRef.current;
+    if (!formattedBars.length) return;
+
+    const timeMapping = {};
+    formattedBars.forEach(bar => {
+      timeMapping[bar.originalTime] = bar.time;
     });
 
     const resolveAnnotationTime = (ann) => {
       if (Number.isInteger(ann.barIndex) && formattedBars[ann.barIndex]) {
-        return formattedBars[ann.barIndex].chartTime;
+        return formattedBars[ann.barIndex].time;
       }
 
-      const candidates = formattedBars.filter(bar => bar.time === ann.timestamp);
+      const candidates = formattedBars.filter(bar => bar.originalTime === ann.timestamp);
       if (candidates.length === 0) return timeMapping[ann.timestamp];
-      if (!ann.metrics) return candidates[candidates.length - 1].chartTime;
+      if (!ann.metrics) return candidates[candidates.length - 1].time;
 
       const metricKeys = ['open', 'high', 'low', 'close', 'ema'];
       const bestMatch = candidates.reduce((best, candidate) => {
@@ -2470,7 +2599,7 @@ export default function ChartComponent({
         return !best || score < best.score ? { candidate, score } : best;
       }, null);
 
-      return bestMatch?.candidate.chartTime;
+      return bestMatch?.candidate.time;
     };
 
     // Build Chart Markers
@@ -2937,7 +3066,7 @@ export default function ChartComponent({
             ref={sliderRef}
             type="range"
             min="0"
-            max={data ? Math.max(0, data.length - 150) : 100}
+            max={data ? Math.max(1, data.length - 1) : 100}
             defaultValue="0"
             onInput={handleSliderInput}
             className="timeline-slider"
