@@ -34,3 +34,7 @@ pnpm-debug.log*
 
 # Transient chart selection shared with Codex
 data/ai_selection.json
+
+# Local analysis and import backups
+scratch/
+*.bak

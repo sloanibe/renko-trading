@@ -1491,6 +1491,19 @@
       }
     },
     {
+      "timestamp": "2026-06-17T07:39:14",
+      "barIndex": 113900,
+      "markerSet": "Tail Arrows",
+      "tailArrow": "up",
+      "metrics": {
+        "open": 7516,
+        "high": 7516.5,
+        "low": 7515.25,
+        "close": 7516.5,
+        "ema": 7515.985
+      }
+    },
+    {
       "timestamp": "2026-06-17T07:40:20",
       "barIndex": 113907,
       "action": "Sell",
@@ -1729,6 +1742,19 @@
       }
     },
     {
+      "timestamp": "2026-06-17T08:44:02",
+      "barIndex": 114481,
+      "markerSet": "Tail Arrows",
+      "tailArrow": "up",
+      "metrics": {
+        "open": 7518,
+        "high": 7518.25,
+        "low": 7517,
+        "close": 7517,
+        "ema": 7517.8595
+      }
+    },
+    {
       "timestamp": "2026-06-17T08:49:20",
       "barIndex": 114498,
       "markerSet": "Tail Arrows",
@@ -1785,5 +1811,6 @@
         "ema": 7553.25
       }
     }
-  ]
+  ],
+  "MESMNew_5pt": []
 }
